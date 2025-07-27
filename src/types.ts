@@ -60,3 +60,11 @@ export interface HPAI {
   address: string;
   port: number;
 }
+
+export interface KNXNetTunnelingOptions {
+  serverAddress: string;
+  serverPort?: number;
+  localPort?: number;
+  heartbeatInterval?: number;
+  connectionTimeout?: number;
+}

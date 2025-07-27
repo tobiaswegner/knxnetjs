@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { createRouting, createDiscovery } from './index';
+import { createRouting, createDiscovery, createTunneling } from './index';
 import { KNXNetConnection, DiscoveryEndpoint } from './types';
 import { KNX_CONSTANTS } from './constants';
 
@@ -8,6 +8,7 @@ interface CLIOptions {
   multicastAddress?: string;
   port?: number;
   timeout?: number;
+  tunnel?: string;
   help?: boolean;
 }
 
@@ -45,6 +46,14 @@ function parseArgs(): CLIOptions {
         }
         break;
       case '-t':
+      case '--tunnel':
+        if (i + 1 < args.length) {
+          const tunnelAddr = args[++i];
+          if (tunnelAddr) {
+            options.tunnel = tunnelAddr;
+          }
+        }
+        break;
       case '--timeout':
         if (i + 1 < args.length) {
           const timeoutStr = args[++i];
@@ -82,16 +91,19 @@ Commands:
   discover                Discover KNXnet/IP endpoints on the network
 
 Options:
-  -a, --address <addr>    Multicast address (default: 224.0.23.12)
+  -a, --address <addr>    Multicast address for routing (default: 224.0.23.12)
   -p, --port <port>       Port number (default: 3671)
-  -t, --timeout <ms>      Discovery timeout in milliseconds (default: 3000)
+  -t, --tunnel <addr>     Use tunneling to specified server address instead of routing
+  --timeout <ms>          Discovery timeout in milliseconds (default: 3000)
   -h, --help              Show this help message
 
 Examples:
-  knxnetjs dump                              # Use default settings
-  knxnetjs dump -a 224.0.23.12 -p 3671     # Custom address and port
+  knxnetjs dump                              # Dump via routing (multicast)
+  knxnetjs dump -a 224.0.23.12 -p 3671     # Custom routing address and port
+  knxnetjs dump -t 192.168.1.100            # Dump via tunneling to server
+  knxnetjs dump -t 192.168.1.100:3672       # Tunneling with custom port
   knxnetjs discover                          # Discover KNX devices
-  knxnetjs discover -t 5000                  # Discover with 5 second timeout
+  knxnetjs discover --timeout 5000          # Discover with 5 second timeout
 `);
 }
 
@@ -137,12 +149,31 @@ function formatCemiFrame(frame: Buffer): string {
 }
 
 async function startFrameDump(options: CLIOptions): Promise<void> {
-  console.log('Starting KNXnet/IP routing connection...');
-  console.log(`Multicast Address: ${options.multicastAddress || '224.0.23.12'}`);
-  console.log(`Port: ${options.port || 3671}`);
-  console.log('Press Ctrl+C to stop\n');
+  let connection: KNXNetConnection;
   
-  const connection: KNXNetConnection = createRouting(options.multicastAddress, options.port);
+  if (options.tunnel) {
+    // Parse tunnel address (support both "ip" and "ip:port" formats)
+    const tunnelParts = options.tunnel.split(':');
+    const serverAddress = tunnelParts[0];
+    if (!serverAddress) {
+      throw new Error('Invalid tunnel address format');
+    }
+    const serverPort = tunnelParts[1] ? parseInt(tunnelParts[1], 10) : undefined;
+    
+    console.log('Starting KNXnet/IP tunneling connection...');
+    console.log(`Server Address: ${serverAddress}`);
+    console.log(`Server Port: ${serverPort || 3671}`);
+    console.log('Press Ctrl+C to stop\n');
+    
+    connection = createTunneling(serverAddress, serverPort);
+  } else {
+    console.log('Starting KNXnet/IP routing connection...');
+    console.log(`Multicast Address: ${options.multicastAddress || '224.0.23.12'}`);
+    console.log(`Port: ${options.port || 3671}`);
+    console.log('Press Ctrl+C to stop\n');
+    
+    connection = createRouting(options.multicastAddress, options.port);
+  }
   
   connection.on('recv', (frame: Buffer) => {
     console.log(formatCemiFrame(frame));
@@ -160,7 +191,11 @@ async function startFrameDump(options: CLIOptions): Promise<void> {
   
   try {
     await connection.connect();
-    console.log('Connected! Listening for KNX frames...\n');
+    if (options.tunnel) {
+      console.log('Tunneling connection established! Listening for KNX frames...\n');
+    } else {
+      console.log('Routing connection established! Listening for KNX frames...\n');
+    }
   } catch (error) {
     console.error('Failed to connect:', (error as Error).message);
     process.exit(1);

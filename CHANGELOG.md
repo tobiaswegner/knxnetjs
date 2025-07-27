@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2025-07-27
+
+### Added
+- KNXnet/IP tunneling connection support with full protocol implementation
+- New `-t`/`--tunnel` option for CLI dump command to use tunneling instead of routing
+- KNXNetTunnelingImpl class implementing complete tunneling lifecycle
+- Tunneling protocol support: CONNECT_REQUEST/RESPONSE, TUNNELLING_REQUEST/ACK, DISCONNECT_REQUEST
+- Connection state monitoring with heartbeat mechanism (CONNECTIONSTATE_REQUEST/RESPONSE)
+- Automatic sequence counter management for tunneling frames
+- Support for both "ip" and "ip:port" tunnel address formats in CLI
+- `createTunneling()` function in index.ts with basic parameter interface
+
+### Changed
+- Enhanced CLI with tunneling mode support alongside existing routing mode
+- Updated help text with tunneling examples and usage instructions
+- Improved socket binding to handle automatic port assignment when localPort is 0
+- Fixed connection response parsing for servers returning 0.0.0.0:0 endpoints
+
+### Technical Details
+- Full KNXnet/IP Tunneling specification compliance
+- UDP unicast communication with connection management
+- Proper HPAI (Host Protocol Address Information) handling
+- Connection timeout and heartbeat interval configuration
+- Graceful connection establishment and teardown procedures
+
 ## [1.2.0] - 2025-07-27
 
 ### Added
@@ -14,7 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Comprehensive device information parsing including KNX addresses, MAC addresses, and serial numbers
 - Service family detection for device capabilities (Core, Management, Tunnelling, Routing)
 - Real-time discovery with formatted output and device details
-- Discovery timeout configuration via `-t`/`--timeout` option
+- Discovery timeout configuration via `--timeout` option
 
 ### Changed
 - Enhanced constants with all KNXnet/IP service types (Core, Management, Tunnelling, Routing)
