@@ -1,0 +1,32 @@
+{
+  "name": "knxnetjs",
+  "version": "1.0.0",
+  "description": "A TypeScript library for KNXnet/IP communication",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "clean": "rm -rf dist",
+    "prepublishOnly": "npm run clean && npm run build"
+  },
+  "keywords": [
+    "knx",
+    "knxnet",
+    "typescript",
+    "home-automation",
+    "building-automation"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  },
+  "files": [
+    "dist/**/*"
+  ],
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}
