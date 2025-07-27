@@ -1,11 +1,13 @@
 #!/usr/bin/env node
 
-import { createRouting } from './index';
-import { KNXNetConnection } from './types';
+import { createRouting, createDiscovery } from './index';
+import { KNXNetConnection, DiscoveryEndpoint } from './types';
+import { KNX_CONSTANTS } from './constants';
 
 interface CLIOptions {
   multicastAddress?: string;
   port?: number;
+  timeout?: number;
   help?: boolean;
 }
 
@@ -42,7 +44,20 @@ function parseArgs(): CLIOptions {
           }
         }
         break;
+      case '-t':
+      case '--timeout':
+        if (i + 1 < args.length) {
+          const timeoutStr = args[++i];
+          if (timeoutStr) {
+            const timeout = parseInt(timeoutStr, 10);
+            if (!isNaN(timeout)) {
+              options.timeout = timeout;
+            }
+          }
+        }
+        break;
       case 'dump':
+      case 'discover':
         break;
       default:
         if (arg && arg.startsWith('-')) {
@@ -60,19 +75,23 @@ function printHelp(): void {
   console.log(`
 knxnetjs - KNXnet/IP CLI Tool
 
-Usage: knxnetjs dump [options]
+Usage: knxnetjs <command> [options]
 
 Commands:
   dump                    Connect to KNX network and dump all received frames
+  discover                Discover KNXnet/IP endpoints on the network
 
 Options:
   -a, --address <addr>    Multicast address (default: 224.0.23.12)
   -p, --port <port>       Port number (default: 3671)
+  -t, --timeout <ms>      Discovery timeout in milliseconds (default: 3000)
   -h, --help              Show this help message
 
 Examples:
   knxnetjs dump                              # Use default settings
   knxnetjs dump -a 224.0.23.12 -p 3671     # Custom address and port
+  knxnetjs discover                          # Discover KNX devices
+  knxnetjs discover -t 5000                  # Discover with 5 second timeout
 `);
 }
 
@@ -148,6 +167,95 @@ async function startFrameDump(options: CLIOptions): Promise<void> {
   }
 }
 
+function formatCapabilities(capabilities: number): string {
+  const caps: string[] = [];
+  
+  if (capabilities & KNX_CONSTANTS.DEVICE_CAPABILITIES.DEVICE_MANAGEMENT) {
+    caps.push('Device Management');
+  }
+  if (capabilities & KNX_CONSTANTS.DEVICE_CAPABILITIES.TUNNELLING) {
+    caps.push('Tunnelling');
+  }
+  if (capabilities & KNX_CONSTANTS.DEVICE_CAPABILITIES.ROUTING) {
+    caps.push('Routing');
+  }
+  if (capabilities & KNX_CONSTANTS.DEVICE_CAPABILITIES.REMOTE_LOGGING) {
+    caps.push('Remote Logging');
+  }
+  if (capabilities & KNX_CONSTANTS.DEVICE_CAPABILITIES.REMOTE_CONFIGURATION) {
+    caps.push('Remote Config');
+  }
+  if (capabilities & KNX_CONSTANTS.DEVICE_CAPABILITIES.OBJECT_SERVER) {
+    caps.push('Object Server');
+  }
+  
+  return caps.length > 0 ? caps.join(', ') : 'None';
+}
+
+function formatDiscoveryResult(endpoint: DiscoveryEndpoint): string {
+  let output = `\n┌─ ${endpoint.name}\n`;
+  output += `├─ Address: ${endpoint.ip}:${endpoint.port}\n`;
+  output += `├─ Capabilities: ${formatCapabilities(endpoint.capabilities)}\n`;
+  
+  if (endpoint.knxAddress) {
+    output += `├─ KNX Address: ${endpoint.knxAddress}\n`;
+  }
+  if (endpoint.macAddress) {
+    output += `├─ MAC Address: ${endpoint.macAddress}\n`;
+  }
+  if (endpoint.serialNumber) {
+    output += `├─ Serial Number: ${endpoint.serialNumber}\n`;
+  }
+  if (endpoint.friendlyName && endpoint.friendlyName !== endpoint.name) {
+    output += `├─ Friendly Name: ${endpoint.friendlyName}\n`;
+  }
+  output += `└─ Device State: ${endpoint.deviceState === 0 ? 'OK' : 'Error'}`;
+  
+  return output;
+}
+
+async function startDiscovery(options: CLIOptions): Promise<void> {
+  console.log('Starting KNXnet/IP device discovery...');
+  console.log(`Timeout: ${options.timeout || KNX_CONSTANTS.DISCOVERY.DEFAULT_SEARCH_TIMEOUT}ms\n`);
+  
+  const discovery = createDiscovery();
+  
+  let deviceCount = 0;
+  
+  discovery.on('deviceFound', (endpoint: DiscoveryEndpoint) => {
+    deviceCount++;
+    console.log(formatDiscoveryResult(endpoint));
+  });
+  
+  discovery.on('error', (error: Error) => {
+    console.error('Discovery error:', error.message);
+  });
+  
+  try {
+    const devices = await discovery.discover({
+      timeout: options.timeout || KNX_CONSTANTS.DISCOVERY.DEFAULT_SEARCH_TIMEOUT
+    });
+    
+    console.log(`\n┌────────────────────────────────────┐`);
+    console.log(`│ Discovery completed                │`);
+    console.log(`│ Found ${deviceCount.toString().padStart(2, ' ')} device(s)                   │`);
+    console.log(`└────────────────────────────────────┘\n`);
+    
+    if (devices.length === 0) {
+      console.log('No KNXnet/IP devices found on the network.');
+      console.log('Make sure:');
+      console.log('- KNX devices are connected and powered on');
+      console.log('- Your network allows UDP multicast traffic');
+      console.log('- Devices are on the same network segment');
+    }
+  } catch (error) {
+    console.error('Failed to discover devices:', (error as Error).message);
+    process.exit(1);
+  } finally {
+    discovery.close();
+  }
+}
+
 async function main(): Promise<void> {
   const options = parseArgs();
   const args = process.argv.slice(2);
@@ -159,6 +267,8 @@ async function main(): Promise<void> {
   
   if (args[0] === 'dump') {
     await startFrameDump(options);
+  } else if (args[0] === 'discover') {
+    await startDiscovery(options);
   } else {
     console.error(`Unknown command: ${args[0]}`);
     console.error('Use "knxnetjs --help" for usage information');

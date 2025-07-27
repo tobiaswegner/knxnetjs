@@ -36,3 +36,27 @@ export interface KNXNetRoutingOptions {
   port?: number;
   ttl?: number;
 }
+
+export interface DiscoveryEndpoint {
+  name: string;
+  ip: string;
+  port: number;
+  capabilities: number;
+  deviceState: number;
+  knxAddress?: string;
+  macAddress?: string;
+  serialNumber?: string;
+  projectInstallationId?: number;
+  friendlyName?: string;
+}
+
+export interface DiscoveryOptions {
+  timeout?: number;
+  searchResponseTimeout?: number;
+}
+
+export interface HPAI {
+  hostProtocol: number;
+  address: string;
+  port: number;
+}
