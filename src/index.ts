@@ -2,17 +2,18 @@ import { KNXNetConnection } from './types';
 import { KNXNetRoutingImpl } from './routing';
 import { KNXNetDiscovery } from './discovery';
 import { KNXNetTunnelingImpl } from './tunneling';
+import { CEMIFrame } from './frames';
 
 export function createRouting(multicastAddress?: string, port?: number): KNXNetConnection {
   const connection = new KNXNetRoutingImpl(multicastAddress, port);
   
   // Auto-connect when first used
   const originalSend = connection.send.bind(connection);
-  connection.send = async (data: Buffer) => {
+  connection.send = async (frame: CEMIFrame) => {
     if (!(connection as any).isConnected) {
       await connection.connect();
     }
-    return originalSend(data);
+    return originalSend(frame);
   };
   
   return connection;
@@ -30,3 +31,4 @@ export { KNXNetConnection, KNXNetRoutingOptions, KNXNetTunnelingOptions, Discove
 export { KNX_CONSTANTS } from './constants';
 export { KNXNetDiscovery } from './discovery';
 export { KNXNetTunnelingImpl } from './tunneling';
+export { CEMIFrame, CEMIMessageCode, Priority } from './frames';

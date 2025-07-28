@@ -28,3 +28,6 @@ coverage/
 # Temporary folders
 tmp/
 temp/
+
+# KNX specification
+spec/

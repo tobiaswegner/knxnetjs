@@ -2,6 +2,7 @@ import { EventEmitter } from 'events';
 import { createSocket, Socket, RemoteInfo } from 'dgram';
 import { KNXNetConnection, KNXNetTunnelingOptions, HPAI } from './types';
 import { KNX_CONSTANTS } from './constants';
+import { CEMIFrame } from './frames';
 
 export class KNXNetTunnelingImpl extends EventEmitter implements KNXNetConnection {
   private socket: Socket | undefined;
@@ -41,12 +42,12 @@ export class KNXNetTunnelingImpl extends EventEmitter implements KNXNetConnectio
     }
   }
 
-  async send(data: Buffer): Promise<void> {
+  async send(frame: CEMIFrame): Promise<void> {
     if (!this.isConnected || !this.socket || !this.serverEndpoint) {
       throw new Error('Not connected to tunneling server');
     }
 
-    const tunnelFrame = this.createTunnelingRequestFrame(data);
+    const tunnelFrame = this.createTunnelingRequestFrame(frame.toBuffer());
     
     return new Promise((resolve, reject) => {
       const timeoutId = setTimeout(() => {
@@ -98,7 +99,7 @@ export class KNXNetTunnelingImpl extends EventEmitter implements KNXNetConnectio
     await this.cleanup();
   }
 
-  on(event: 'recv', listener: (data: Buffer) => void): this;
+  on(event: 'recv', listener: (frame: CEMIFrame) => void): this;
   on(event: 'error', listener: (error: Error) => void): this;
   on(event: string, listener: (...args: any[]) => void): this {
     return super.on(event, listener);
@@ -336,8 +337,19 @@ export class KNXNetTunnelingImpl extends EventEmitter implements KNXNetConnectio
     this.sendTunnelingAck(connectionId, sequenceCounter, KNX_CONSTANTS.ERROR_CODES.E_NO_ERROR);
 
     // Extract cEMI frame
-    const cemiFrame = msg.subarray(offset);
-    this.emit('recv', cemiFrame);
+    const cemiFrameBuffer = msg.subarray(offset);
+    if (CEMIFrame.isValidBuffer(cemiFrameBuffer)) {
+      const cemiFrame = CEMIFrame.fromBuffer(cemiFrameBuffer);
+      this.emit('recv', cemiFrame);
+    } else {
+      // For invalid frames, create a basic cEMI frame wrapper
+      try {
+        const cemiFrame = CEMIFrame.fromBuffer(cemiFrameBuffer);
+        this.emit('recv', cemiFrame);
+      } catch (error) {
+        this.emit('error', new Error(`Invalid cEMI frame received: ${(error as Error).message}`));
+      }
+    }
   }
 
   private sendTunnelingAck(connectionId: number, sequenceCounter: number, status: number): void {

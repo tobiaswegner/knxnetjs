@@ -3,6 +3,7 @@
 import { createRouting, createDiscovery, createTunneling } from './index';
 import { KNXNetConnection, DiscoveryEndpoint } from './types';
 import { KNX_CONSTANTS } from './constants';
+import { CEMIFrame } from './frames';
 
 interface CLIOptions {
   multicastAddress?: string;
@@ -107,46 +108,6 @@ Examples:
 `);
 }
 
-function formatCemiFrame(frame: Buffer): string {
-  if (frame.length < 2) {
-    return 'Invalid CEMI frame (too short)';
-  }
-  
-  const messageCode = frame.readUInt8(0);
-  const ctrl1 = frame.length > 1 ? frame.readUInt8(1) : 0;
-  
-  let messageType = 'Unknown';
-  switch (messageCode) {
-    case 0x11: messageType = 'L_DATA.req'; break;
-    case 0x2E: messageType = 'L_DATA.con'; break;
-    case 0x29: messageType = 'L_DATA.ind'; break;
-  }
-  
-  const priority = (ctrl1 >> 2) & 0x03;
-  const routing = (ctrl1 >> 4) & 0x07;
-  
-  let output = `[${new Date().toISOString()}] ${messageType}`;
-  output += ` | Routing: ${routing} | Priority: ${priority}`;
-  
-  if (frame.length >= 8) {
-    const sourceAddress = frame.readUInt16BE(2);
-    const destAddress = frame.readUInt16BE(4);
-    const length = frame.readUInt8(6);
-    
-    output += ` | Src: ${(sourceAddress >> 12) & 0x0F}.${(sourceAddress >> 8) & 0x0F}.${sourceAddress & 0xFF}`;
-    output += ` | Dst: ${(destAddress >> 11) & 0x1F}/${(destAddress >> 8) & 0x07}/${destAddress & 0xFF}`;
-    output += ` | Length: ${length}`;
-    
-    if (frame.length > 7) {
-      const data = frame.subarray(7);
-      output += ` | Data: ${data.toString('hex').toUpperCase()}`;
-    }
-  }
-  
-  output += ` | Raw: ${frame.toString('hex').toUpperCase()}`;
-  
-  return output;
-}
 
 async function startFrameDump(options: CLIOptions): Promise<void> {
   let connection: KNXNetConnection;
@@ -175,8 +136,8 @@ async function startFrameDump(options: CLIOptions): Promise<void> {
     connection = createRouting(options.multicastAddress, options.port);
   }
   
-  connection.on('recv', (frame: Buffer) => {
-    console.log(formatCemiFrame(frame));
+  connection.on('recv', (frame: CEMIFrame) => {
+    console.log(frame.toFormattedString());
   });
   
   connection.on('error', (error: Error) => {

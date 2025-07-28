@@ -8,6 +8,7 @@ import {
   RoutingBusyFrame,
 } from "./types";
 import { KNX_CONSTANTS } from "./constants";
+import { CEMIFrame } from "./frames";
 
 export class KNXNetRoutingImpl
   extends EventEmitter
@@ -57,16 +58,16 @@ export class KNXNetRoutingImpl
     });
   }
 
-  async send(data: Buffer): Promise<void> {
+  async send(frame: CEMIFrame): Promise<void> {
     if (!this.isConnected || !this.socket) {
       throw new Error("Not connected");
     }
 
-    const frame = this.createRoutingIndicationFrame(data);
+    const routingFrame = this.createRoutingIndicationFrame(frame.toBuffer());
 
     return new Promise((resolve, reject) => {
       this.socket!.send(
-        frame,
+        routingFrame,
         this.options.port,
         this.options.multicastAddress,
         (err) => {
@@ -88,7 +89,7 @@ export class KNXNetRoutingImpl
     }
   }
 
-  on(event: "recv", listener: (data: Buffer) => void): this;
+  on(event: "recv", listener: (frame: CEMIFrame) => void): this;
   on(event: "error", listener: (error: Error) => void): this;
   on(event: string, listener: (...args: any[]) => void): this {
     return super.on(event, listener);
@@ -175,13 +176,30 @@ export class KNXNetRoutingImpl
   }
 
   private handleRoutingIndication(frame: RoutingIndicationFrame): void {
-    const routingCounter = this.extractRoutingCounter(frame.cemiFrame);
+    if (CEMIFrame.isValidBuffer(frame.cemiFrame)) {
+      const cemiFrame = CEMIFrame.fromBuffer(frame.cemiFrame);
+      const routingCounter = cemiFrame.routingCounter;
 
-    if (routingCounter === KNX_CONSTANTS.ROUTING_COUNTER.DONT_ROUTE) {
-      return;
+      if (routingCounter === KNX_CONSTANTS.ROUTING_COUNTER.DONT_ROUTE) {
+        return;
+      }
+
+      this.emit("recv", cemiFrame);
+    } else {
+      // Fallback to old extraction method for invalid frames
+      const routingCounter = this.extractRoutingCounter(frame.cemiFrame);
+      if (routingCounter === KNX_CONSTANTS.ROUTING_COUNTER.DONT_ROUTE) {
+        return;
+      }
+      
+      // Try to create a CEMIFrame from invalid buffer, emit error if it fails
+      try {
+        const cemiFrame = CEMIFrame.fromBuffer(frame.cemiFrame);
+        this.emit("recv", cemiFrame);
+      } catch (error) {
+        this.emit("error", new Error(`Invalid cEMI frame received: ${(error as Error).message}`));
+      }
     }
-
-    this.emit("recv", frame.cemiFrame);
   }
 
   private handleRoutingLostMessage(frame: RoutingLostMessageFrame): void {

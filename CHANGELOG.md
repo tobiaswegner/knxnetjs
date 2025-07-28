@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2025-07-28
+
+### Added
+- New CEMIFrame class for structured cEMI frame handling and parsing
+- CEMIFrame.toFormattedString() method for enhanced frame display formatting
+- CEMIFrame validation with isValidBuffer() method
+- Export of CEMIFrame, CEMIMessageCode, and Priority types from main index
+
+### Changed
+- Updated KNXNetConnection interface to use CEMIFrame objects instead of raw buffers
+- Enhanced CLI frame formatting using new CEMIFrame.toFormattedString() method
+- Improved error handling for invalid cEMI frames in both routing and tunneling
+- Refactored routing and tunneling implementations to use structured CEMIFrame objects
+- Better type safety with CEMIFrame-based send() and recv event handling
+
+### Technical Details
+- Centralized cEMI frame parsing and validation logic
+- Enhanced frame debugging and troubleshooting capabilities
+- Improved code maintainability with structured frame objects
+- Better error reporting for malformed cEMI frames
+
 ## [1.3.0] - 2025-07-27
 
 ### Added

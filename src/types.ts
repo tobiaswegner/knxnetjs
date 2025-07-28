@@ -1,8 +1,9 @@
 import { EventEmitter } from 'events';
+import { CEMIFrame } from './frames';
 
 export interface KNXNetConnection extends EventEmitter {
-  send(data: Buffer): Promise<void>;
-  on(event: 'recv', listener: (data: Buffer) => void): this;
+  send(frame: CEMIFrame): Promise<void>;
+  on(event: 'recv', listener: (frame: CEMIFrame) => void): this;
   on(event: 'error', listener: (error: Error) => void): this;
   connect(): Promise<void>;
   close(): Promise<void>;
