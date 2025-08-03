@@ -63,8 +63,9 @@ export const KNX_CONSTANTS = {
   TUNNELING: {
     DEFAULT_HEARTBEAT_INTERVAL: 60000, // 60 seconds
     DEFAULT_CONNECTION_TIMEOUT: 10000,  // 10 seconds
-    CONNECTION_TYPE: 0x04,
+    CONNECTION_TYPE: 0x04,  // Always tunneling connection type
     LAYER_TYPE_TUNNEL_LINKLAYER: 0x02,
+    LAYER_TYPE_BUSMONITOR: 0x80,
     MAX_RETRIES: 3
   },
   

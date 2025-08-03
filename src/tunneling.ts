@@ -1,10 +1,13 @@
-import { EventEmitter } from 'events';
-import { createSocket, Socket, RemoteInfo } from 'dgram';
-import { KNXNetConnection, KNXNetTunnelingOptions, HPAI } from './types';
-import { KNX_CONSTANTS } from './constants';
-import { CEMIFrame } from './frames';
+import { EventEmitter } from "events";
+import { createSocket, Socket, RemoteInfo } from "dgram";
+import { KNXNetConnection, KNXNetTunnelingOptions, HPAI } from "./types";
+import { KNX_CONSTANTS } from "./constants";
+import { CEMIFrame } from "./frames";
 
-export class KNXNetTunnelingImpl extends EventEmitter implements KNXNetConnection {
+export class KNXNetTunnelingImpl
+  extends EventEmitter
+  implements KNXNetConnection
+{
   private socket: Socket | undefined;
   private isConnected = false;
   private readonly options: Required<KNXNetTunnelingOptions>;
@@ -14,15 +17,23 @@ export class KNXNetTunnelingImpl extends EventEmitter implements KNXNetConnectio
   private connectionTimer: NodeJS.Timeout | undefined;
   private serverEndpoint: HPAI | undefined;
   private localEndpoint: HPAI | undefined;
+  private readonly busmonitorMode: boolean;
 
-  constructor(serverAddress: string, serverPort?: number, localPort?: number) {
+  constructor(
+    serverAddress: string,
+    serverPort?: number,
+    localPort?: number,
+    busmonitorMode?: boolean
+  ) {
     super();
+    this.busmonitorMode = busmonitorMode ?? false;
     this.options = {
       serverAddress,
       serverPort: serverPort ?? KNX_CONSTANTS.DEFAULT_PORT,
       localPort: localPort ?? 0,
       heartbeatInterval: KNX_CONSTANTS.TUNNELING.DEFAULT_HEARTBEAT_INTERVAL,
-      connectionTimeout: KNX_CONSTANTS.TUNNELING.DEFAULT_CONNECTION_TIMEOUT
+      connectionTimeout: KNX_CONSTANTS.TUNNELING.DEFAULT_CONNECTION_TIMEOUT,
+      busmonitorMode: this.busmonitorMode,
     };
   }
 
@@ -44,21 +55,28 @@ export class KNXNetTunnelingImpl extends EventEmitter implements KNXNetConnectio
 
   async send(frame: CEMIFrame): Promise<void> {
     if (!this.isConnected || !this.socket || !this.serverEndpoint) {
-      throw new Error('Not connected to tunneling server');
+      throw new Error("Not connected to tunneling server");
+    }
+
+    // In busmonitor mode, typically no frames are sent - this is monitor-only
+    if (this.busmonitorMode) {
+      throw new Error(
+        "Cannot send frames in busmonitor mode - this is a monitor-only connection"
+      );
     }
 
     const tunnelFrame = this.createTunnelingRequestFrame(frame.toBuffer());
-    
+
     return new Promise((resolve, reject) => {
       const timeoutId = setTimeout(() => {
-        reject(new Error('Tunneling request timeout'));
+        reject(new Error("Tunneling request timeout"));
       }, this.options.connectionTimeout);
 
       const handleAck = (msg: Buffer, rinfo: RemoteInfo) => {
         if (this.isTunnelingAck(msg)) {
           clearTimeout(timeoutId);
-          this.socket!.off('message', handleAck);
-          
+          this.socket!.off("message", handleAck);
+
           const status = this.parseTunnelingAck(msg);
           if (status === KNX_CONSTANTS.ERROR_CODES.E_NO_ERROR) {
             resolve();
@@ -68,8 +86,8 @@ export class KNXNetTunnelingImpl extends EventEmitter implements KNXNetConnectio
         }
       };
 
-      this.socket!.on('message', handleAck);
-      
+      this.socket!.on("message", handleAck);
+
       this.socket!.send(
         tunnelFrame,
         this.serverEndpoint!.port,
@@ -77,7 +95,7 @@ export class KNXNetTunnelingImpl extends EventEmitter implements KNXNetConnectio
         (err) => {
           if (err) {
             clearTimeout(timeoutId);
-            this.socket!.off('message', handleAck);
+            this.socket!.off("message", handleAck);
             reject(err);
           }
         }
@@ -99,31 +117,38 @@ export class KNXNetTunnelingImpl extends EventEmitter implements KNXNetConnectio
     await this.cleanup();
   }
 
-  on(event: 'recv', listener: (frame: CEMIFrame) => void): this;
-  on(event: 'error', listener: (error: Error) => void): this;
+  /**
+   * Check if this connection is in busmonitor mode
+   */
+  isBusmonitorMode(): boolean {
+    return this.busmonitorMode;
+  }
+
+  on(event: "recv", listener: (frame: CEMIFrame) => void): this;
+  on(event: "error", listener: (error: Error) => void): this;
   on(event: string, listener: (...args: any[]) => void): this {
     return super.on(event, listener);
   }
 
   private async setupSocket(): Promise<void> {
     return new Promise((resolve, reject) => {
-      this.socket = createSocket({ type: 'udp4', reuseAddr: true });
+      this.socket = createSocket({ type: "udp4", reuseAddr: true });
 
-      this.socket.on('error', (err) => {
-        this.emit('error', err);
+      this.socket.on("error", (err) => {
+        this.emit("error", err);
         reject(err);
       });
 
-      this.socket.on('message', (msg, rinfo) => {
+      this.socket.on("message", (msg, rinfo) => {
         this.handleIncomingMessage(msg, rinfo);
       });
 
-      this.socket.on('listening', () => {
+      this.socket.on("listening", () => {
         const address = this.socket!.address();
         this.localEndpoint = {
           hostProtocol: 0x01, // UDP
-          address: '0.0.0.0', // Any interface
-          port: address.port
+          address: "0.0.0.0", // Any interface
+          port: address.port,
         };
         resolve();
       });
@@ -139,17 +164,17 @@ export class KNXNetTunnelingImpl extends EventEmitter implements KNXNetConnectio
 
   private async establishConnection(): Promise<void> {
     const connectFrame = this.createConnectRequestFrame();
-    
+
     return new Promise((resolve, reject) => {
       const timeoutId = setTimeout(() => {
-        reject(new Error('Connection timeout'));
+        reject(new Error("Connection timeout"));
       }, this.options.connectionTimeout);
 
       const handleResponse = (msg: Buffer, rinfo: RemoteInfo) => {
         if (this.isConnectResponse(msg)) {
           clearTimeout(timeoutId);
-          this.socket!.off('message', handleResponse);
-          
+          this.socket!.off("message", handleResponse);
+
           try {
             const result = this.parseConnectResponse(msg, rinfo);
             if (result.status === KNX_CONSTANTS.ERROR_CODES.E_NO_ERROR) {
@@ -157,7 +182,9 @@ export class KNXNetTunnelingImpl extends EventEmitter implements KNXNetConnectio
               this.serverEndpoint = result.dataEndpoint;
               resolve();
             } else {
-              reject(new Error(`Connection failed: 0x${result.status.toString(16)}`));
+              reject(
+                new Error(`Connection failed: 0x${result.status.toString(16)}`)
+              );
             }
           } catch (error) {
             reject(error);
@@ -165,8 +192,8 @@ export class KNXNetTunnelingImpl extends EventEmitter implements KNXNetConnectio
         }
       };
 
-      this.socket!.on('message', handleResponse);
-      
+      this.socket!.on("message", handleResponse);
+
       this.socket!.send(
         connectFrame,
         this.options.serverPort,
@@ -174,7 +201,7 @@ export class KNXNetTunnelingImpl extends EventEmitter implements KNXNetConnectio
         (err) => {
           if (err) {
             clearTimeout(timeoutId);
-            this.socket!.off('message', handleResponse);
+            this.socket!.off("message", handleResponse);
             reject(err);
           }
         }
@@ -199,8 +226,14 @@ export class KNXNetTunnelingImpl extends EventEmitter implements KNXNetConnectio
     // Connection Request Information (4 bytes)
     const cri = Buffer.allocUnsafe(4);
     cri.writeUInt8(4, 0); // Structure length
-    cri.writeUInt8(KNX_CONSTANTS.TUNNELING.CONNECTION_TYPE, 1); // Tunnel connection
-    cri.writeUInt8(KNX_CONSTANTS.TUNNELING.LAYER_TYPE_TUNNEL_LINKLAYER, 2); // Link layer
+    cri.writeUInt8(KNX_CONSTANTS.TUNNELING.CONNECTION_TYPE, 1); // Always tunneling connection type
+    
+    // Use appropriate layer type based on busmonitor mode
+    const layerType = this.busmonitorMode
+      ? KNX_CONSTANTS.TUNNELING.LAYER_TYPE_BUSMONITOR
+      : KNX_CONSTANTS.TUNNELING.LAYER_TYPE_TUNNEL_LINKLAYER;
+
+    cri.writeUInt8(layerType, 2); // Layer type
     cri.writeUInt8(0, 3); // Reserved
 
     return Buffer.concat([header, controlHpai, dataHpai, cri]);
@@ -208,7 +241,7 @@ export class KNXNetTunnelingImpl extends EventEmitter implements KNXNetConnectio
 
   private createTunnelingRequestFrame(cemiFrame: Buffer): Buffer {
     const currentSeq = this.sequenceCounter;
-    this.sequenceCounter = (this.sequenceCounter + 1) & 0xFF;
+    this.sequenceCounter = (this.sequenceCounter + 1) & 0xff;
 
     // KNXnet/IP Header (6 bytes)
     const totalLength = 6 + 4 + cemiFrame.length;
@@ -232,9 +265,11 @@ export class KNXNetTunnelingImpl extends EventEmitter implements KNXNetConnectio
     const hpai = Buffer.allocUnsafe(8);
     hpai.writeUInt8(8, 0); // Structure length
     hpai.writeUInt8(endpoint.hostProtocol, 1);
-    
-    const ipParts = endpoint.address === '0.0.0.0' ? [0, 0, 0, 0] : 
-                   endpoint.address.split('.').map(x => parseInt(x, 10));
+
+    const ipParts =
+      endpoint.address === "0.0.0.0"
+        ? [0, 0, 0, 0]
+        : endpoint.address.split(".").map((x) => parseInt(x, 10));
     hpai.writeUInt8(ipParts[0] || 0, 2);
     hpai.writeUInt8(ipParts[1] || 0, 3);
     hpai.writeUInt8(ipParts[2] || 0, 4);
@@ -250,14 +285,14 @@ export class KNXNetTunnelingImpl extends EventEmitter implements KNXNetConnectio
       buffer.readUInt8(offset + 2),
       buffer.readUInt8(offset + 3),
       buffer.readUInt8(offset + 4),
-      buffer.readUInt8(offset + 5)
-    ].join('.');
+      buffer.readUInt8(offset + 5),
+    ].join(".");
     const port = buffer.readUInt16BE(offset + 6);
 
     return {
       hostProtocol,
       address: ip,
-      port
+      port,
     };
   }
 
@@ -273,7 +308,10 @@ export class KNXNetTunnelingImpl extends EventEmitter implements KNXNetConnectio
     return serviceType === KNX_CONSTANTS.SERVICE_TYPES.TUNNELLING_ACK;
   }
 
-  private parseConnectResponse(msg: Buffer, rinfo: RemoteInfo): { status: number; connectionId: number; dataEndpoint: HPAI } {
+  private parseConnectResponse(
+    msg: Buffer,
+    rinfo: RemoteInfo
+  ): { status: number; connectionId: number; dataEndpoint: HPAI } {
     let offset = KNX_CONSTANTS.HEADER_SIZE;
 
     // Connection ID (1 byte)
@@ -288,7 +326,7 @@ export class KNXNetTunnelingImpl extends EventEmitter implements KNXNetConnectio
     const dataEndpoint = this.parseHPAI(msg, offset);
 
     // Use server's address and port if data endpoint is 0.0.0.0:0
-    if (dataEndpoint.address === '0.0.0.0') {
+    if (dataEndpoint.address === "0.0.0.0") {
       dataEndpoint.address = rinfo.address;
     }
     if (dataEndpoint.port === 0) {
@@ -310,7 +348,7 @@ export class KNXNetTunnelingImpl extends EventEmitter implements KNXNetConnectio
       }
 
       const serviceType = msg.readUInt16BE(2);
-      
+
       switch (serviceType) {
         case KNX_CONSTANTS.SERVICE_TYPES.TUNNELLING_REQUEST:
           this.handleTunnelingRequest(msg);
@@ -321,7 +359,7 @@ export class KNXNetTunnelingImpl extends EventEmitter implements KNXNetConnectio
         // CONNECT_RESPONSE and TUNNELLING_ACK are handled by specific listeners
       }
     } catch (error) {
-      this.emit('error', error);
+      this.emit("error", error);
     }
   }
 
@@ -334,31 +372,42 @@ export class KNXNetTunnelingImpl extends EventEmitter implements KNXNetConnectio
     offset += 4;
 
     // Send ACK
-    this.sendTunnelingAck(connectionId, sequenceCounter, KNX_CONSTANTS.ERROR_CODES.E_NO_ERROR);
+    this.sendTunnelingAck(
+      connectionId,
+      sequenceCounter,
+      KNX_CONSTANTS.ERROR_CODES.E_NO_ERROR
+    );
 
     // Extract cEMI frame
     const cemiFrameBuffer = msg.subarray(offset);
     if (CEMIFrame.isValidBuffer(cemiFrameBuffer)) {
       const cemiFrame = CEMIFrame.fromBuffer(cemiFrameBuffer);
-      this.emit('recv', cemiFrame);
+      this.emit("recv", cemiFrame);
     } else {
       // For invalid frames, create a basic cEMI frame wrapper
       try {
         const cemiFrame = CEMIFrame.fromBuffer(cemiFrameBuffer);
-        this.emit('recv', cemiFrame);
+        this.emit("recv", cemiFrame);
       } catch (error) {
-        this.emit('error', new Error(`Invalid cEMI frame received: ${(error as Error).message}`));
+        this.emit(
+          "error",
+          new Error(`Invalid cEMI frame received: ${(error as Error).message}`)
+        );
       }
     }
   }
 
-  private sendTunnelingAck(connectionId: number, sequenceCounter: number, status: number): void {
+  private sendTunnelingAck(
+    connectionId: number,
+    sequenceCounter: number,
+    status: number
+  ): void {
     if (!this.socket || !this.serverEndpoint) {
       return;
     }
 
     const ackFrame = Buffer.allocUnsafe(10);
-    
+
     // KNXnet/IP Header
     ackFrame.writeUInt8(KNX_CONSTANTS.HEADER_SIZE, 0);
     ackFrame.writeUInt8(KNX_CONSTANTS.KNXNETIP_VERSION, 1);
@@ -371,7 +420,11 @@ export class KNXNetTunnelingImpl extends EventEmitter implements KNXNetConnectio
     ackFrame.writeUInt8(sequenceCounter, 8);
     ackFrame.writeUInt8(status, 9);
 
-    this.socket.send(ackFrame, this.serverEndpoint.port, this.serverEndpoint.address);
+    this.socket.send(
+      ackFrame,
+      this.serverEndpoint.port,
+      this.serverEndpoint.address
+    );
   }
 
   private handleConnectionStateRequest(_msg: Buffer): void {
@@ -385,18 +438,25 @@ export class KNXNetTunnelingImpl extends EventEmitter implements KNXNetConnectio
     }
 
     const responseFrame = Buffer.allocUnsafe(8);
-    
+
     // KNXnet/IP Header
     responseFrame.writeUInt8(KNX_CONSTANTS.HEADER_SIZE, 0);
     responseFrame.writeUInt8(KNX_CONSTANTS.KNXNETIP_VERSION, 1);
-    responseFrame.writeUInt16BE(KNX_CONSTANTS.SERVICE_TYPES.CONNECTIONSTATE_RESPONSE, 2);
+    responseFrame.writeUInt16BE(
+      KNX_CONSTANTS.SERVICE_TYPES.CONNECTIONSTATE_RESPONSE,
+      2
+    );
     responseFrame.writeUInt16BE(8, 4);
 
     // Connection ID and Status
     responseFrame.writeUInt8(this.connectionId, 6);
     responseFrame.writeUInt8(status, 7);
 
-    this.socket.send(responseFrame, this.serverEndpoint.port, this.serverEndpoint.address);
+    this.socket.send(
+      responseFrame,
+      this.serverEndpoint.port,
+      this.serverEndpoint.address
+    );
   }
 
   private async sendDisconnectRequest(): Promise<void> {
@@ -405,11 +465,14 @@ export class KNXNetTunnelingImpl extends EventEmitter implements KNXNetConnectio
     }
 
     const disconnectFrame = Buffer.allocUnsafe(16);
-    
+
     // KNXnet/IP Header
     disconnectFrame.writeUInt8(KNX_CONSTANTS.HEADER_SIZE, 0);
     disconnectFrame.writeUInt8(KNX_CONSTANTS.KNXNETIP_VERSION, 1);
-    disconnectFrame.writeUInt16BE(KNX_CONSTANTS.SERVICE_TYPES.DISCONNECT_REQUEST, 2);
+    disconnectFrame.writeUInt16BE(
+      KNX_CONSTANTS.SERVICE_TYPES.DISCONNECT_REQUEST,
+      2
+    );
     disconnectFrame.writeUInt16BE(16, 4);
 
     // Connection ID
@@ -421,9 +484,14 @@ export class KNXNetTunnelingImpl extends EventEmitter implements KNXNetConnectio
     controlHpai.copy(disconnectFrame, 8);
 
     return new Promise((resolve) => {
-      this.socket!.send(disconnectFrame, this.serverEndpoint!.port, this.serverEndpoint!.address, () => {
-        resolve();
-      });
+      this.socket!.send(
+        disconnectFrame,
+        this.serverEndpoint!.port,
+        this.serverEndpoint!.address,
+        () => {
+          resolve();
+        }
+      );
     });
   }
 
@@ -439,11 +507,14 @@ export class KNXNetTunnelingImpl extends EventEmitter implements KNXNetConnectio
     }
 
     const requestFrame = Buffer.allocUnsafe(16);
-    
+
     // KNXnet/IP Header
     requestFrame.writeUInt8(KNX_CONSTANTS.HEADER_SIZE, 0);
     requestFrame.writeUInt8(KNX_CONSTANTS.KNXNETIP_VERSION, 1);
-    requestFrame.writeUInt16BE(KNX_CONSTANTS.SERVICE_TYPES.CONNECTIONSTATE_REQUEST, 2);
+    requestFrame.writeUInt16BE(
+      KNX_CONSTANTS.SERVICE_TYPES.CONNECTIONSTATE_REQUEST,
+      2
+    );
     requestFrame.writeUInt16BE(16, 4);
 
     // Connection ID
@@ -454,7 +525,11 @@ export class KNXNetTunnelingImpl extends EventEmitter implements KNXNetConnectio
     const controlHpai = this.createHPAI(this.localEndpoint!);
     controlHpai.copy(requestFrame, 8);
 
-    this.socket.send(requestFrame, this.serverEndpoint.port, this.serverEndpoint.address);
+    this.socket.send(
+      requestFrame,
+      this.serverEndpoint.port,
+      this.serverEndpoint.address
+    );
   }
 
   private async cleanup(): Promise<void> {

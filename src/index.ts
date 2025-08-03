@@ -23,6 +23,10 @@ export function createTunneling(serverAddress: string, serverPort?: number, loca
   return new KNXNetTunnelingImpl(serverAddress, serverPort, localPort);
 }
 
+export function createBusmonitor(serverAddress: string, serverPort?: number, localPort?: number): KNXNetConnection {
+  return new KNXNetTunnelingImpl(serverAddress, serverPort, localPort, true);
+}
+
 export function createDiscovery(): KNXNetDiscovery {
   return new KNXNetDiscovery();
 }

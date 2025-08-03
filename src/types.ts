@@ -68,4 +68,5 @@ export interface KNXNetTunnelingOptions {
   localPort?: number;
   heartbeatInterval?: number;
   connectionTimeout?: number;
+  busmonitorMode?: boolean;
 }

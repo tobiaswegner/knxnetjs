@@ -5,13 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.4.0] - 2025-07-28
+## [1.4.0] - 2025-08-02
 
 ### Added
 - New CEMIFrame class for structured cEMI frame handling and parsing
 - CEMIFrame.toFormattedString() method for enhanced frame display formatting
 - CEMIFrame validation with isValidBuffer() method
 - Export of CEMIFrame, CEMIMessageCode, and Priority types from main index
+- **Busmonitor mode support** for KNXnet/IP tunneling connections
+- New `createBusmonitor()` function for read-only bus monitoring
+- CLI `--busmonitor` option for enhanced bus traffic monitoring
 
 ### Changed
 - Updated KNXNetConnection interface to use CEMIFrame objects instead of raw buffers
@@ -19,12 +22,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Improved error handling for invalid cEMI frames in both routing and tunneling
 - Refactored routing and tunneling implementations to use structured CEMIFrame objects
 - Better type safety with CEMIFrame-based send() and recv event handling
+- Enhanced tunneling implementation with busmonitor mode support
 
 ### Technical Details
 - Centralized cEMI frame parsing and validation logic
 - Enhanced frame debugging and troubleshooting capabilities
 - Improved code maintainability with structured frame objects
 - Better error reporting for malformed cEMI frames
+- Busmonitor mode prevents frame transmission (read-only operation)
+- Validation ensures busmonitor mode requires tunneling connection
+- Proper KNXnet/IP busmonitor protocol implementation using layer type 0x80
+- Connection type remains 0x04 (tunneling) with busmonitor layer specification
 
 ## [1.3.0] - 2025-07-27
 

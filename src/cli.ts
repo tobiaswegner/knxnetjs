@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { createRouting, createDiscovery, createTunneling } from './index';
+import { createRouting, createDiscovery, createTunneling, createBusmonitor } from './index';
 import { KNXNetConnection, DiscoveryEndpoint } from './types';
 import { KNX_CONSTANTS } from './constants';
 import { CEMIFrame } from './frames';
@@ -10,6 +10,7 @@ interface CLIOptions {
   port?: number;
   timeout?: number;
   tunnel?: string;
+  busmonitor?: boolean;
   help?: boolean;
 }
 
@@ -66,6 +67,9 @@ function parseArgs(): CLIOptions {
           }
         }
         break;
+      case '--busmonitor':
+        options.busmonitor = true;
+        break;
       case 'dump':
       case 'discover':
         break;
@@ -95,6 +99,7 @@ Options:
   -a, --address <addr>    Multicast address for routing (default: 224.0.23.12)
   -p, --port <port>       Port number (default: 3671)
   -t, --tunnel <addr>     Use tunneling to specified server address instead of routing
+  --busmonitor            Enable busmonitor mode for tunneling connections (read-only)
   --timeout <ms>          Discovery timeout in milliseconds (default: 3000)
   -h, --help              Show this help message
 
@@ -103,6 +108,7 @@ Examples:
   knxnetjs dump -a 224.0.23.12 -p 3671     # Custom routing address and port
   knxnetjs dump -t 192.168.1.100            # Dump via tunneling to server
   knxnetjs dump -t 192.168.1.100:3672       # Tunneling with custom port
+  knxnetjs dump -t 192.168.1.100 --busmonitor  # Busmonitor mode (read-only)
   knxnetjs discover                          # Discover KNX devices
   knxnetjs discover --timeout 5000          # Discover with 5 second timeout
 `);
@@ -121,13 +127,29 @@ async function startFrameDump(options: CLIOptions): Promise<void> {
     }
     const serverPort = tunnelParts[1] ? parseInt(tunnelParts[1], 10) : undefined;
     
-    console.log('Starting KNXnet/IP tunneling connection...');
-    console.log(`Server Address: ${serverAddress}`);
-    console.log(`Server Port: ${serverPort || 3671}`);
-    console.log('Press Ctrl+C to stop\n');
-    
-    connection = createTunneling(serverAddress, serverPort);
+    if (options.busmonitor) {
+      console.log('Starting KNXnet/IP busmonitor connection...');
+      console.log(`Server Address: ${serverAddress}`);
+      console.log(`Server Port: ${serverPort || 3671}`);
+      console.log(`Mode: Busmonitor (read-only)`);
+      console.log('Press Ctrl+C to stop\n');
+      
+      connection = createBusmonitor(serverAddress, serverPort);
+    } else {
+      console.log('Starting KNXnet/IP tunneling connection...');
+      console.log(`Server Address: ${serverAddress}`);
+      console.log(`Server Port: ${serverPort || 3671}`);
+      console.log('Press Ctrl+C to stop\n');
+      
+      connection = createTunneling(serverAddress, serverPort);
+    }
   } else {
+    if (options.busmonitor) {
+      console.error('Error: --busmonitor option requires tunneling mode (-t/--tunnel)');
+      console.error('Busmonitor mode is only available with tunneling connections');
+      process.exit(1);
+    }
+    
     console.log('Starting KNXnet/IP routing connection...');
     console.log(`Multicast Address: ${options.multicastAddress || '224.0.23.12'}`);
     console.log(`Port: ${options.port || 3671}`);
@@ -153,7 +175,11 @@ async function startFrameDump(options: CLIOptions): Promise<void> {
   try {
     await connection.connect();
     if (options.tunnel) {
-      console.log('Tunneling connection established! Listening for KNX frames...\n');
+      if (options.busmonitor) {
+        console.log('Busmonitor connection established! Monitoring KNX traffic...\n');
+      } else {
+        console.log('Tunneling connection established! Listening for KNX frames...\n');
+      }
     } else {
       console.log('Routing connection established! Listening for KNX frames...\n');
     }
