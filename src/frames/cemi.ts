@@ -76,7 +76,10 @@ export class CEMIFrame {
       additionalInfoLength += 2 + info.data.length; // type + length + data
     }
 
-    const serviceInfoLength = 6 + data.length; // L_Data service info
+    // Calculate service info length: 1 (ctrl1) + 0|1 (ctrl2) + 2 (src) + 2 (dst) + 1 (len) + data
+    const ctrl1 = (hopCount << 4) | (priority << 2) | 0x00;
+    const isExtended = (ctrl1 & 0x80) === 0;
+    const serviceInfoLength = (isExtended ? 7 : 6) + data.length; // Add 1 byte for ctrl2 if extended
     const frameLength = 2 + additionalInfoLength + serviceInfoLength;
     const buffer = Buffer.allocUnsafe(frameLength);
 
@@ -97,9 +100,15 @@ export class CEMIFrame {
     }
 
     // Service Information (L_Data)
-    // Control Field 1 (CTRL1)
-    const ctrl1 = (hopCount << 4) | (priority << 2) | 0x00; // No repeat, no broadcast, no ack
+    // Control Field 1 (CTRL1) - reuse the calculated value
     buffer.writeUInt8(ctrl1, offset++);
+
+    // Control Field 2 (for extended frames, bit 7 = 0 means extended frame)
+    if ((ctrl1 & 0x80) === 0) {
+      // Extended frame - add Control Field 2
+      const ctrl2 = (hopCount << 4) | 0x00; // Hop count and other flags
+      buffer.writeUInt8(ctrl2, offset++);
+    }
 
     // Source Address
     buffer.writeUInt16BE(sourceAddress, offset);
@@ -216,7 +225,10 @@ export class CEMIFrame {
       const offset = this.serviceInfoOffset + 1;
       return this.buffer.length > offset ? this.buffer.readUInt8(offset) : 0;
     } else {
-      return 0;
+      // In standard frames, Control Field 2 is in the upper 4 bits of the length field
+      const offset = this.serviceInfoOffset + 5;
+      if (this.buffer.length < offset + 1) return 0;
+      return this.buffer.readUInt8(offset) & 0xf0;
     }
   }
 
@@ -240,11 +252,11 @@ export class CEMIFrame {
   }
 
   get extendedFrame(): boolean {
-    return (this.controlField1 & 0x40) === 0;
+    return (this.controlField1 & 0x80) === 0;
   }
 
   get standardFrame(): boolean {
-    return (this.controlField1 & 0x40) !== 0;
+    return (this.controlField1 & 0x80) !== 0;
   }
 
   get repeatFlag(): boolean {
@@ -264,6 +276,7 @@ export class CEMIFrame {
   }
 
   get hopCount(): number {
+    // Hop count is always in bits 6-4 of Control Field 2
     return (this.controlField2 >> 4) & 0x07;
   }
 
@@ -272,6 +285,8 @@ export class CEMIFrame {
   }
 
   get sourceAddress(): number {
+    // Standard frame: offset = 2 (msg+addinfo) + 1 (ctrl1) = 3
+    // Extended frame: offset = 2 (msg+addinfo) + 1 (ctrl1) + 1 (ctrl2) = 4
     const offset = this.serviceInfoOffset + 1 + (this.extendedFrame ? 1 : 0);
     if (this.buffer.length < offset + 2) return 0;
     return this.buffer.readUInt16BE(offset);
@@ -286,6 +301,8 @@ export class CEMIFrame {
   }
 
   get destinationAddress(): number {
+    // Standard frame: offset = 2 (msg+addinfo) + 1 (ctrl1) + 2 (src addr) = 5
+    // Extended frame: offset = 2 (msg+addinfo) + 1 (ctrl1) + 1 (ctrl2) + 2 (src addr) = 6
     const offset = this.serviceInfoOffset + 3 + (this.extendedFrame ? 1 : 0);
     if (this.buffer.length < offset + 2) return 0;
     return this.buffer.readUInt16BE(offset);
@@ -307,13 +324,23 @@ export class CEMIFrame {
   }
 
   get isGroupAddress(): boolean {
+    // Destination address type is always in bit 7 of Control Field 2
     return (this.controlField2 & 0x80) !== 0;
   }
 
   get dataLength(): number {
     const offset = this.serviceInfoOffset + 5 + (this.extendedFrame ? 1 : 0);
     if (this.buffer.length < offset + 1) return 0;
-    return this.buffer.readUInt8(offset);
+    const lengthByte = this.buffer.readUInt8(offset);
+    if (this.standardFrame) {
+      // In standard frames, data length is in the lower 4 bits
+      // This represents the number of application payload bytes (excluding TPCI/APCI)
+      return lengthByte & 0x0f;
+    } else {
+      // In extended frames, full byte is data length
+      // This represents the number of application payload bytes (excluding TPCI/APCI)
+      return lengthByte;
+    }
   }
 
   get data(): Buffer {
@@ -325,14 +352,15 @@ export class CEMIFrame {
   get tpci(): number {
     const data = this.data;
     if (data.length === 0) return 0;
-    return (data.readUInt8(0) >> 6) & 0x03;
+    // TPCI is 6 bits wide (bits 7-2), same for both standard and extended frames
+    return (data.readUInt8(0) >> 2) & 0x3f;
   }
 
   get apci(): number {
     const data = this.data;
     if (data.length === 0) return 0;
     if (data.length === 1) {
-      return data.readUInt8(0) & 0x3f;
+      return data.readUInt8(0) & 0x03;
     }
     return ((data.readUInt8(0) & 0x03) << 8) | data.readUInt8(1);
   }

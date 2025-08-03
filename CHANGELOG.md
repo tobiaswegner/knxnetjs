@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - 2025-08-03
+
+### Added
+- Comprehensive Jest testing framework with TypeScript support
+- Complete cEMI frame parsing test suite with 27 test cases
+- Support for extended frame Control Field 2 in frame creation
+- Proper TPCI (6-bit) and APCI (10-bit) parsing according to KNX specification
+- Enhanced frame validation for various cEMI frame types
+
+### Fixed
+- **Critical cEMI frame parsing issues** with additional information handling
+- Incorrect data length interpretation (now correctly represents application payload bytes)
+- Extended frame creation missing Control Field 2 byte
+- TPCI/APCI bit field parsing for proper 16-bit transport/application control
+- Address offset calculations for both standard and extended frames
+- Control Field 2 integration with length field in standard frames
+
+### Technical Details
+- cEMI data length field correctly represents application payload bytes (excluding TPCI/APCI)
+- TPCI uses 6 bits, APCI uses 10 bits (total 16 bits = 2 bytes minimum for data)
+- Extended frame creation now includes proper Control Field 2
+- Comprehensive test coverage validates frame parsing edge cases
+- Jest testing infrastructure for continuous validation
+
 ## [1.4.0] - 2025-08-02
 
 ### Added
