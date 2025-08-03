@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0] - 2025-08-03
+
+### Added
+- **Practical Examples Collection**: Added comprehensive examples directory with real-world usage patterns
+- Basic routing example demonstrating frame listening and sending
+- Advanced tunneling control example with device automation (lights, dimmers, temperature sensors)
+- Examples showcase common KNX home automation scenarios and best practices
+- Ready-to-run Node.js scripts with proper error handling and graceful shutdown
+
+### Documentation
+- Enhanced README.md with complete package documentation and usage guides
+- Comprehensive API documentation with TypeScript examples
+- CLI usage guide with all supported commands and options
+- Troubleshooting section for common integration issues
+- Protocol support details and network requirements
+
+### Technical Details
+- Examples use CommonJS format for broad Node.js compatibility
+- Real-world group address patterns and device control commands
+- Proper KNX data type handling (switches, dimmers, temperature values)
+- Production-ready error handling and connection management
+
 ## [1.5.0] - 2025-08-03
 
 ### Added
