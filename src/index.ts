@@ -1,7 +1,7 @@
 import { KNXNetConnection } from './types';
-import { KNXNetRoutingImpl } from './routing';
+import { KNXNetRoutingImpl } from './interfaces/routing';
 import { KNXNetDiscovery } from './discovery';
-import { KNXNetTunnelingImpl } from './tunneling';
+import { KNXNetTunnelingImpl } from './interfaces/tunneling';
 import { CEMIFrame } from './frames';
 
 export function createRouting(multicastAddress?: string, port?: number): KNXNetConnection {
@@ -34,5 +34,5 @@ export function createDiscovery(): KNXNetDiscovery {
 export { KNXNetConnection, KNXNetRoutingOptions, KNXNetTunnelingOptions, DiscoveryEndpoint, DiscoveryOptions } from './types';
 export { KNX_CONSTANTS } from './constants';
 export { KNXNetDiscovery } from './discovery';
-export { KNXNetTunnelingImpl } from './tunneling';
+export { KNXNetTunnelingImpl } from './interfaces/tunneling';
 export { CEMIFrame, CEMIMessageCode, Priority } from './frames';

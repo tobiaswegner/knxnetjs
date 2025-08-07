@@ -6,9 +6,9 @@ import {
   RoutingIndicationFrame,
   RoutingLostMessageFrame,
   RoutingBusyFrame,
-} from "./types";
-import { KNX_CONSTANTS } from "./constants";
-import { CEMIFrame } from "./frames";
+} from "../types";
+import { KNX_CONSTANTS } from "../constants";
+import { CEMIFrame } from "../frames";
 
 export class KNXNetRoutingImpl
   extends EventEmitter

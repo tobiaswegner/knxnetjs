@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.0] - 2025-08-07
+
+### Changed
+- **Code Organization**: Moved routing and tunneling implementations to new `interfaces/` subdirectory
+- Restructured project for better separation of interface implementations
+- Updated import paths throughout codebase to reflect new directory structure
+
+### Technical Details
+- Created `src/interfaces/` directory for better code organization
+- Moved `routing.ts` and `tunneling.ts` to `src/interfaces/` subdirectory
+- Updated all import statements to use relative paths from new location
+- Build verification confirms all imports and compilation work correctly
+
 ## [1.6.0] - 2025-08-03
 
 ### Added

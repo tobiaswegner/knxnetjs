@@ -1,8 +1,8 @@
 import { EventEmitter } from "events";
 import { createSocket, Socket, RemoteInfo } from "dgram";
-import { KNXNetConnection, KNXNetTunnelingOptions, HPAI } from "./types";
-import { KNX_CONSTANTS } from "./constants";
-import { CEMIFrame } from "./frames";
+import { KNXNetConnection, KNXNetTunnelingOptions, HPAI } from "../types";
+import { KNX_CONSTANTS } from "../constants";
+import { CEMIFrame } from "../frames";
 
 export class KNXNetTunnelingImpl
   extends EventEmitter
@@ -269,7 +269,7 @@ export class KNXNetTunnelingImpl
     const ipParts =
       endpoint.address === "0.0.0.0"
         ? [0, 0, 0, 0]
-        : endpoint.address.split(".").map((x) => parseInt(x, 10));
+        : endpoint.address.split(".").map((x: string) => parseInt(x, 10));
     hpai.writeUInt8(ipParts[0] || 0, 2);
     hpai.writeUInt8(ipParts[1] || 0, 3);
     hpai.writeUInt8(ipParts[2] || 0, 4);
