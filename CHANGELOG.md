@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.0] - 2025-08-11
+
+### Added
+- **Unified Interface Discovery System**: New `discoverInterfaces()` function for comprehensive KNX interface detection
+- **KNXInterfaceInformation Class**: Unified interface information with methods for capability checking
+- **Universal Interface Creation**: New `createInterface()` function accepting interface information and busmonitor mode
+- **Enhanced CLI Discovery**: Updated discover command to show routing, tunneling, and USB interfaces in unified view
+- Interface capability detection methods: `supportsTunneling()`, `supportsRouting()`, `supportsBusmonitor()`
+
+### Changed
+- **Interface Naming**: Renamed `KNXNetConnection` interface to `KNXBusInterface` for better clarity
+- **Connection Method**: Renamed `connect()` method to `open()` across all implementations and usage
+- **CLI Discovery Output**: Enhanced formatting with interface types, capabilities, and comprehensive device information
+- Updated all documentation and examples to use new interface names and method names
+
+### Technical Details
+- Unified interface discovery supports both network (routing/tunneling) and USB interface detection
+- CLI now provides comprehensive interface information including supported features and connection details
+- Backward compatibility maintained through interface implementation patterns
+- Enhanced TypeScript support with proper method signatures in interface definitions
+
 ## [1.8.0] - 2025-08-11
 
 ### Added

@@ -41,9 +41,10 @@ export function createDiscovery(): KNXNetDiscovery {
   return new KNXNetDiscovery();
 }
 
-export { KNXBusInterface, KNXNetRoutingOptions, KNXNetTunnelingOptions, KNXUSBOptions, DiscoveryEndpoint, DiscoveryOptions } from './types';
+export { KNXBusInterface, KNXNetRoutingOptions, KNXNetTunnelingOptions, KNXUSBOptions, DiscoveryEndpoint, DiscoveryOptions, KNXInterfaceType, KNXInterfaceInformation } from './types';
 export { KNX_CONSTANTS } from './constants';
 export { KNXNetDiscovery } from './discovery';
 export { KNXNetTunnelingImpl } from './interfaces/tunneling';
 export { KNXUSBImpl } from './interfaces/usb';
 export { CEMIFrame, CEMIMessageCode, Priority } from './frames';
+export { discoverInterfaces, createInterface } from './interface-discovery';

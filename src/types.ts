@@ -77,3 +77,37 @@ export interface KNXUSBOptions {
   autoConnect?: boolean;
   busmonitorMode?: boolean;
 }
+
+export enum KNXInterfaceType {
+  ROUTING = 'routing',
+  TUNNELING = 'tunneling',
+  USB = 'usb'
+}
+
+export interface KNXInterfaceInformation {
+  type: KNXInterfaceType;
+  name: string;
+  description?: string;
+  
+  // Network interface properties (routing/tunneling)
+  address?: string;
+  port?: number;
+  capabilities?: number;
+  knxAddress?: string;
+  macAddress?: string;
+  serialNumber?: string;
+  friendlyName?: string;
+  
+  // USB interface properties
+  devicePath?: string;
+  vendorId?: number;
+  productId?: number;
+  manufacturer?: string;
+  product?: string;
+
+  // Methods
+  supportsTunneling(): boolean;
+  supportsRouting(): boolean;
+  supportsBusmonitor(): boolean;
+  toString(): string;
+}

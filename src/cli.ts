@@ -2,14 +2,15 @@
 
 import {
   createRouting,
-  createDiscovery,
   createTunneling,
   createBusmonitor,
   createUSB,
   createUSBBusmonitor,
   KNXUSBImpl,
+  discoverInterfaces,
+  KNXInterfaceInformation,
 } from "./index";
-import { KNXBusInterface, DiscoveryEndpoint } from "./types";
+import { KNXBusInterface } from "./types";
 import { KNX_CONSTANTS } from "./constants";
 import { CEMIFrame } from "./frames";
 
@@ -293,76 +294,106 @@ function formatCapabilities(capabilities: number): string {
   return caps.length > 0 ? caps.join(", ") : "None";
 }
 
-function formatDiscoveryResult(endpoint: DiscoveryEndpoint): string {
-  let output = `\n┌─ ${endpoint.name}\n`;
-  output += `├─ Address: ${endpoint.ip}:${endpoint.port}\n`;
-  output += `├─ Capabilities: ${formatCapabilities(endpoint.capabilities)}\n`;
 
-  if (endpoint.knxAddress) {
-    output += `├─ KNX Address: ${endpoint.knxAddress}\n`;
+function formatInterfaceResult(interfaceInfo: KNXInterfaceInformation): string {
+  let output = `\n┌─ ${interfaceInfo.name}\n`;
+  output += `├─ Type: ${interfaceInfo.type.toUpperCase()}\n`;
+  
+  if (interfaceInfo.description) {
+    output += `├─ Description: ${interfaceInfo.description}\n`;
   }
-  if (endpoint.macAddress) {
-    output += `├─ MAC Address: ${endpoint.macAddress}\n`;
+  
+  // Network interface details
+  if (interfaceInfo.address) {
+    output += `├─ Address: ${interfaceInfo.address}:${interfaceInfo.port || 3671}\n`;
   }
-  if (endpoint.serialNumber) {
-    output += `├─ Serial Number: ${endpoint.serialNumber}\n`;
+  if (interfaceInfo.capabilities !== undefined) {
+    output += `├─ Capabilities: ${formatCapabilities(interfaceInfo.capabilities)}\n`;
   }
-  if (endpoint.friendlyName && endpoint.friendlyName !== endpoint.name) {
-    output += `├─ Friendly Name: ${endpoint.friendlyName}\n`;
+  if (interfaceInfo.knxAddress) {
+    output += `├─ KNX Address: ${interfaceInfo.knxAddress}\n`;
   }
-  output += `└─ Device State: ${endpoint.deviceState === 0 ? "OK" : "Error"}`;
+  if (interfaceInfo.macAddress) {
+    output += `├─ MAC Address: ${interfaceInfo.macAddress}\n`;
+  }
+  if (interfaceInfo.serialNumber) {
+    output += `├─ Serial Number: ${interfaceInfo.serialNumber}\n`;
+  }
+  if (interfaceInfo.friendlyName && interfaceInfo.friendlyName !== interfaceInfo.name) {
+    output += `├─ Friendly Name: ${interfaceInfo.friendlyName}\n`;
+  }
+  
+  // USB interface details
+  if (interfaceInfo.devicePath) {
+    output += `├─ Device Path: ${interfaceInfo.devicePath}\n`;
+  }
+  if (interfaceInfo.vendorId !== undefined && interfaceInfo.productId !== undefined) {
+    output += `├─ USB ID: ${interfaceInfo.vendorId.toString(16).padStart(4, '0')}:${interfaceInfo.productId.toString(16).padStart(4, '0')}\n`;
+  }
+  if (interfaceInfo.manufacturer) {
+    output += `├─ Manufacturer: ${interfaceInfo.manufacturer}\n`;
+  }
+  if (interfaceInfo.product) {
+    output += `├─ Product: ${interfaceInfo.product}\n`;
+  }
+  
+  // Show supported features
+  const features = [];
+  if (interfaceInfo.supportsRouting()) features.push("Routing");
+  if (interfaceInfo.supportsTunneling()) features.push("Tunneling");
+  if (interfaceInfo.supportsBusmonitor()) features.push("Busmonitor");
+  
+  if (features.length > 0) {
+    output += `├─ Supported: ${features.join(", ")}\n`;
+  }
+  
+  output += `└─ Status: Available`;
 
   return output;
 }
 
 async function startDiscovery(options: CLIOptions): Promise<void> {
-  console.log("Starting KNXnet/IP device discovery...");
+  console.log("Starting KNX interface discovery...");
   console.log(
     `Timeout: ${
       options.timeout || KNX_CONSTANTS.DISCOVERY.DEFAULT_SEARCH_TIMEOUT
     }ms\n`
   );
 
-  const discovery = createDiscovery();
-
-  let deviceCount = 0;
-
-  discovery.on("deviceFound", (endpoint: DiscoveryEndpoint) => {
-    deviceCount++;
-    console.log(formatDiscoveryResult(endpoint));
-  });
-
-  discovery.on("error", (error: Error) => {
-    console.error("Discovery error:", error.message);
-  });
+  let interfaceCount = 0;
 
   try {
-    const devices = await discovery.discover({
-      timeout:
-        options.timeout || KNX_CONSTANTS.DISCOVERY.DEFAULT_SEARCH_TIMEOUT,
-    });
+    await discoverInterfaces(
+      (interfaceInfo: KNXInterfaceInformation) => {
+        interfaceCount++;
+        console.log(formatInterfaceResult(interfaceInfo));
+      },
+      {
+        timeout: options.timeout || KNX_CONSTANTS.DISCOVERY.DEFAULT_SEARCH_TIMEOUT,
+        includeUSB: true,
+      }
+    );
 
     console.log(`\n┌────────────────────────────────────┐`);
     console.log(`│ Discovery completed                │`);
     console.log(
-      `│ Found ${deviceCount
+      `│ Found ${interfaceCount
         .toString()
-        .padStart(2, " ")} device(s)                   │`
+        .padStart(2, " ")} interface(s)                │`
     );
     console.log(`└────────────────────────────────────┘\n`);
 
-    if (devices.length === 0) {
-      console.log("No KNXnet/IP devices found on the network.");
+    if (interfaceCount === 0) {
+      console.log("No KNX interfaces found.");
       console.log("Make sure:");
       console.log("- KNX devices are connected and powered on");
       console.log("- Your network allows UDP multicast traffic");
+      console.log("- USB KNX interfaces are properly connected");
       console.log("- Devices are on the same network segment");
     }
   } catch (error) {
-    console.error("Failed to discover devices:", (error as Error).message);
+    console.error("Failed to discover interfaces:", (error as Error).message);
     process.exit(1);
-  } finally {
-    discovery.close();
   }
 }
 
