@@ -9,11 +9,12 @@ A modern TypeScript library for KNXnet/IP communication, providing comprehensive
 
 ## Features
 
-- **🔌 Multiple Connection Types**: Routing, Tunneling, and Busmonitor modes
+- **🔌 Multiple Connection Types**: Routing, Tunneling, USB, and Busmonitor modes
+- **🔗 USB KNX Interface**: Direct USB HID communication with KNX interfaces
 - **🔍 Device Discovery**: Automatic KNX device detection on the network
 - **📡 KNXnet/IP Protocol**: Full compliance with KNX specifications
 - **🏠 Home Automation**: Perfect for smart home and building automation
-- **📊 Bus Monitoring**: Real-time KNX bus traffic analysis
+- **📊 Bus Monitoring**: Real-time KNX bus traffic analysis (Network + USB)
 - **⚡ TypeScript**: Full type safety and modern development experience
 - **🧪 Comprehensive Testing**: 27+ test cases ensuring reliability
 - **📋 CLI Tool**: Command-line interface for quick debugging and monitoring
@@ -70,22 +71,46 @@ await connection.send(frame);
 await connection.close();
 ```
 
+### USB KNX Interface
+
+```typescript
+import { createUSB } from 'knxnetjs';
+
+// Create a USB connection to a KNX interface
+const connection = createUSB({
+  devicePath: '/dev/hidraw0' // Optional: auto-detect if not specified
+});
+
+connection.on('recv', (frame: CEMIFrame) => {
+  console.log(`USB received: ${frame.toFormattedString()}`);
+});
+
+await connection.connect();
+await connection.send(frame);
+await connection.close();
+```
+
 ### Busmonitor Mode (Read-Only)
 
 ```typescript
-import { createBusmonitor } from 'knxnetjs';
+import { createBusmonitor, createUSBBusmonitor } from 'knxnetjs';
 
-// Create a busmonitor connection for traffic analysis
-const monitor = createBusmonitor('192.168.1.100');
+// Network busmonitor via tunneling
+const networkMonitor = createBusmonitor('192.168.1.100');
 
-monitor.on('recv', (frame: CEMIFrame) => {
-  console.log(`[MONITOR] ${frame.toFormattedString()}`);
+// USB busmonitor via direct interface
+const usbMonitor = createUSBBusmonitor({
+  devicePath: '/dev/hidraw0' // Optional: auto-detect if not specified
+});
+
+networkMonitor.on('recv', (frame: CEMIFrame) => {
+  console.log(`[NET MONITOR] ${frame.toFormattedString()}`);
   console.log(`  Priority: ${frame.priorityText}`);
   console.log(`  TPCI: 0x${frame.tpci.toString(16)}`);
   console.log(`  APCI: 0x${frame.apci.toString(16)}`);
 });
 
-await monitor.connect();
+await networkMonitor.connect();
 // Busmonitor mode is read-only - cannot send frames
 ```
 
@@ -122,8 +147,15 @@ knxnetjs dump
 # Listen via tunneling to a specific interface
 knxnetjs dump -t 192.168.1.100
 
+# Listen via USB KNX interface
+knxnetjs dump -u
+
+# Listen via specific USB device
+knxnetjs dump -u --usb-device /dev/hidraw0
+
 # Enable busmonitor mode for detailed traffic analysis
-knxnetjs dump -t 192.168.1.100 --busmonitor
+knxnetjs dump -t 192.168.1.100 --busmonitor  # Network busmonitor
+knxnetjs dump -u --busmonitor                # USB busmonitor
 
 # Discover KNX devices on the network
 knxnetjs discover
@@ -236,6 +268,27 @@ const connection = createTunneling(
 );
 ```
 
+### USB Options
+
+```typescript
+import { createUSB, createUSBBusmonitor } from 'knxnetjs';
+
+// Basic USB connection with auto-detection
+const connection = createUSB();
+
+// USB connection with specific device path
+const connection = createUSB({
+  devicePath: '/dev/hidraw0',  // Specific device path
+  autoConnect: true,           // Auto-connect on creation (default: true)
+  busmonitorMode: false        // Read-only mode (default: false)
+});
+
+// USB busmonitor mode
+const monitor = createUSBBusmonitor({
+  devicePath: '/dev/hidraw1'   // Optional: auto-detect if not specified
+});
+```
+
 ### Discovery Options
 
 ```typescript
@@ -254,16 +307,23 @@ const devices = await discovery.discover({
 - **KNXnet/IP Routing**: Full support with multicast communication
 - **KNXnet/IP Tunneling**: Full support with connection management
 - **KNXnet/IP Device Management**: Device discovery and information
+- **USB KNX Interface**: HID protocol with Transfer Protocol support
 - **cEMI Frames**: Complete parsing and generation support
 - **Standard & Extended Frames**: Both frame types supported
 - **Group Communication**: Full support for group addressing
 
-## Network Requirements
+## Requirements
 
+### Network (KNXnet/IP)
 - **Multicast Support**: Required for routing mode
 - **UDP Port 3671**: Standard KNXnet/IP port
 - **Network Segment**: Devices must be on same network for discovery
 - **Firewall**: Ensure UDP traffic is allowed
+
+### USB Interface
+- **USB HID Drivers**: Required for USB KNX interface communication
+- **Device Permissions**: User must have read/write access to HID device
+- **Compatible Interfaces**: Standard KNX USB interfaces with HID protocol
 
 ## Examples Repository
 
@@ -304,9 +364,23 @@ The library includes 27+ test cases covering:
    - Check if the interface supports tunneling
    - Ensure the interface isn't already at max connections
 
-3. **Busmonitor mode not working**
+3. **USB interface not detected**
+   - Check if the USB KNX interface is properly connected
+   - Verify device permissions (may require sudo or udev rules)
+   - On Linux, check `/dev/hidraw*` devices
+   - On Windows, ensure proper HID drivers are installed
+   - Try specifying the device path manually with `--usb-device`
+
+4. **USB connection fails**
+   - Verify the device path is correct (`ls /dev/hidraw*`)
+   - Check if another application is using the interface
+   - Ensure your user has permissions to access HID devices
+   - Try running with elevated privileges (sudo) temporarily
+
+5. **Busmonitor mode not working**
    - Ensure the interface supports busmonitor mode
    - Some routers disable busmonitor for performance reasons
+   - For USB: verify the interface supports read-only monitoring
    - Try different interfaces or update firmware
 
 ### Debug Mode
