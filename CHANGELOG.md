@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.0] - 2025-08-11
+
+### Added
+- **USB KNX Interface Support**: Complete USB HID implementation for direct KNX interface communication
+- New `createUSB()` and `createUSBBusmonitor()` functions for USB KNX connections
+- USB CLI support with `-u`/`--usb` and `--usb-device` options for device path specification
+- KNXHIDReport class for USB HID protocol frame handling with 64-byte report structure
+- KNXUSBTransferFrame class implementing KNX USB Transfer Protocol with header and body parsing
+- USB device auto-detection with fallback to manual device path specification
+- USB busmonitor mode support for read-only KNX traffic monitoring via USB
+- CEMIProperties support for USB interface configuration and feature management
+
+### Changed  
+- Enhanced CLI with USB interface options alongside existing network modes
+- Updated help text with comprehensive USB usage examples and device path guidance
+- Busmonitor mode now supports both tunneling (`-t --busmonitor`) and USB (`-u --busmonitor`) connections
+- Improved error handling for USB device detection and connection failures
+
+### Dependencies
+- Added `node-hid` (^2.1.2) for USB HID device communication
+- Added `@types/node-hid` (^1.3.4) for TypeScript support
+
+### Technical Details
+- USB HID communication with 64-byte report structure and sequence counter management
+- KNX USB Transfer Protocol implementation with cEMI frame encapsulation
+- Device initialization with proper feature configuration and communication mode setup
+- Auto-reset functionality and comprehensive error recovery mechanisms
+- Support for multiple USB KNX interface vendors through standard HID protocol
+
 ## [1.7.0] - 2025-08-07
 
 ### Changed

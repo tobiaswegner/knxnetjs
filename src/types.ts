@@ -1,10 +1,10 @@
-import { EventEmitter } from 'events';
-import { CEMIFrame } from './frames';
+import { EventEmitter } from "events";
+import { CEMIFrame } from "./frames";
 
 export interface KNXNetConnection extends EventEmitter {
   send(frame: CEMIFrame): Promise<void>;
-  on(event: 'recv', listener: (frame: CEMIFrame) => void): this;
-  on(event: 'error', listener: (error: Error) => void): this;
+  on(event: "recv", listener: (frame: CEMIFrame) => void): this;
+  on(event: "error", listener: (error: Error) => void): this;
   connect(): Promise<void>;
   close(): Promise<void>;
 }
@@ -68,5 +68,12 @@ export interface KNXNetTunnelingOptions {
   localPort?: number;
   heartbeatInterval?: number;
   connectionTimeout?: number;
+  busmonitorMode?: boolean;
+}
+
+export interface KNXUSBOptions {
+  devicePath?: string;
+  baudRate?: number;
+  autoConnect?: boolean;
   busmonitorMode?: boolean;
 }

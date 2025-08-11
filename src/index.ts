@@ -1,7 +1,8 @@
-import { KNXNetConnection } from './types';
+import { KNXNetConnection, KNXUSBOptions } from './types';
 import { KNXNetRoutingImpl } from './interfaces/routing';
 import { KNXNetDiscovery } from './discovery';
 import { KNXNetTunnelingImpl } from './interfaces/tunneling';
+import { KNXUSBImpl } from './interfaces/usb';
 import { CEMIFrame } from './frames';
 
 export function createRouting(multicastAddress?: string, port?: number): KNXNetConnection {
@@ -27,12 +28,22 @@ export function createBusmonitor(serverAddress: string, serverPort?: number, loc
   return new KNXNetTunnelingImpl(serverAddress, serverPort, localPort, true);
 }
 
+export function createUSB(options?: KNXUSBOptions): KNXNetConnection {
+  return new KNXUSBImpl(options);
+}
+
+export function createUSBBusmonitor(options?: KNXUSBOptions): KNXNetConnection {
+  const usbOptions = { ...options, busmonitorMode: true };
+  return new KNXUSBImpl(usbOptions);
+}
+
 export function createDiscovery(): KNXNetDiscovery {
   return new KNXNetDiscovery();
 }
 
-export { KNXNetConnection, KNXNetRoutingOptions, KNXNetTunnelingOptions, DiscoveryEndpoint, DiscoveryOptions } from './types';
+export { KNXNetConnection, KNXNetRoutingOptions, KNXNetTunnelingOptions, KNXUSBOptions, DiscoveryEndpoint, DiscoveryOptions } from './types';
 export { KNX_CONSTANTS } from './constants';
 export { KNXNetDiscovery } from './discovery';
 export { KNXNetTunnelingImpl } from './interfaces/tunneling';
+export { KNXUSBImpl } from './interfaces/usb';
 export { CEMIFrame, CEMIMessageCode, Priority } from './frames';

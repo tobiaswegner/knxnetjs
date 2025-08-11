@@ -1,1 +1,2 @@
 export { CEMIFrame, CEMIMessageCode, Priority, KNXAddress, KNXGroupAddress, AdditionalInfo } from './cemi';
+export { KNXUSBTransferFrame, KNXUSBTransferHeader, KNXUSBTransferBody } from './knx-usb-transfer';
