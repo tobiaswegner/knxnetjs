@@ -114,6 +114,52 @@ await networkMonitor.open();
 // Busmonitor mode is read-only - cannot send frames
 ```
 
+### Interface Discovery & Unified Creation
+
+The library provides a unified interface discovery system that can discover and create connections to routing, tunneling, and USB interfaces:
+
+```typescript
+import { discoverInterfaces, createInterface, KNXInterfaceInformation } from 'knxnetjs';
+
+// Discover all available KNX interfaces
+console.log('Discovering KNX interfaces...');
+const interfaces: KNXInterfaceInformation[] = [];
+
+await discoverInterfaces((interfaceInfo) => {
+  interfaces.push(interfaceInfo);
+  console.log(`Found: ${interfaceInfo.toString()}`);
+  console.log(`  Type: ${interfaceInfo.type}`);
+  console.log(`  Supports Tunneling: ${interfaceInfo.supportsTunneling()}`);
+  console.log(`  Supports Routing: ${interfaceInfo.supportsRouting()}`);
+  console.log(`  Supports Busmonitor: ${interfaceInfo.supportsBusmonitor()}`);
+}, { timeout: 5000, includeUSB: true });
+
+// Create interface from discovered information
+if (interfaces.length > 0) {
+  const selectedInterface = interfaces[0]; // Use first discovered interface
+  
+  // Create connection (normal mode)
+  const connection = createInterface(selectedInterface, false);
+  
+  // Or create in busmonitor mode (read-only)
+  const monitor = createInterface(selectedInterface, true);
+  
+  await connection.open();
+  
+  connection.on('recv', (frame) => {
+    console.log(`Received: ${frame.toFormattedString()}`);
+  });
+  
+  // Send a frame (if not in busmonitor mode)
+  if (!selectedInterface.supportsBusmonitor() || selectedInterface.type === 'usb') {
+    const frame = new CEMIFrame(/* frame data */);
+    await connection.send(frame);
+  }
+  
+  await connection.close();
+}
+```
+
 ### Device Discovery
 
 ```typescript
@@ -157,7 +203,7 @@ knxnetjs dump -u --usb-device /dev/hidraw0
 knxnetjs dump -t 192.168.1.100 --busmonitor  # Network busmonitor
 knxnetjs dump -u --busmonitor                # USB busmonitor
 
-# Discover KNX devices on the network
+# Discover all KNX interfaces (network + USB)
 knxnetjs discover
 
 # Custom settings
@@ -241,6 +287,70 @@ const frameWithInfo = CEMIFrame.create(
 );
 
 console.log(`Additional Info: ${frameWithInfo.additionalInfo.length} items`);
+```
+
+## API Reference
+
+### Interface Discovery Functions
+
+```typescript
+// Discover all available KNX interfaces
+import { discoverInterfaces, KNXInterfaceInformation } from 'knxnetjs';
+
+await discoverInterfaces(
+  (interfaceInfo: KNXInterfaceInformation) => {
+    // Called for each discovered interface
+    console.log(interfaceInfo.toString());
+  },
+  {
+    timeout: 5000,      // Discovery timeout in ms (default: 3000)
+    includeUSB: true    // Include USB interfaces (default: true)
+  }
+);
+```
+
+### Universal Interface Creation
+
+```typescript
+import { createInterface, KNXInterfaceInformation } from 'knxnetjs';
+
+// Create interface from discovered information
+const connection = createInterface(
+  interfaceInfo,        // KNXInterfaceInformation object
+  false                 // busmonitorMode: boolean (default: false)
+);
+```
+
+### Interface Information Methods
+
+```typescript
+// Check interface capabilities
+if (interfaceInfo.supportsTunneling()) {
+  console.log('Interface supports tunneling');
+}
+
+if (interfaceInfo.supportsRouting()) {
+  console.log('Interface supports routing');
+}
+
+if (interfaceInfo.supportsBusmonitor()) {
+  console.log('Interface supports busmonitor mode');
+}
+
+// Get interface description
+console.log(interfaceInfo.toString());
+// Output: "KNX Tunneling (192.168.1.100:3671) - KNX Interface"
+```
+
+### Interface Types
+
+```typescript
+import { KNXInterfaceType } from 'knxnetjs';
+
+// Available interface types
+KNXInterfaceType.ROUTING    // 'routing'
+KNXInterfaceType.TUNNELING  // 'tunneling'  
+KNXInterfaceType.USB        // 'usb'
 ```
 
 ## Configuration Options
