@@ -1,6 +1,6 @@
 import { EventEmitter } from "events";
 import * as HID from "node-hid";
-import { KNXNetConnection, KNXUSBOptions } from "../types";
+import { KNXBusInterface, KNXUSBOptions } from "../types";
 import { CEMIFrame, KNXUSBTransferFrame, CEMIMessageCode } from "../frames";
 import { KNXHIDReport } from "../frames/knx-hid-report";
 import { KNXUSBTransferEMIId } from "../frames/knx-usb-transfer";
@@ -10,7 +10,7 @@ import {
   Properties,
 } from "../frames/cemi-properties";
 
-export class KNXUSBImpl extends EventEmitter implements KNXNetConnection {
+export class KNXUSBImpl extends EventEmitter implements KNXBusInterface {
   private hidDevice?: HID.HID;
   private isConnected = false;
   private readonly options: Required<KNXUSBOptions>;
@@ -26,7 +26,7 @@ export class KNXUSBImpl extends EventEmitter implements KNXNetConnection {
     };
   }
 
-  async connect(): Promise<void> {
+  async open(): Promise<void> {
     if (this.isConnected) {
       return;
     }

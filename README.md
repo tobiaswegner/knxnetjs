@@ -66,7 +66,7 @@ connection.on('recv', (frame: CEMIFrame) => {
   console.log(`Tunneling received: ${frame.toFormattedString()}`);
 });
 
-await connection.connect();
+await connection.open();
 await connection.send(frame);
 await connection.close();
 ```
@@ -85,7 +85,7 @@ connection.on('recv', (frame: CEMIFrame) => {
   console.log(`USB received: ${frame.toFormattedString()}`);
 });
 
-await connection.connect();
+await connection.open();
 await connection.send(frame);
 await connection.close();
 ```
@@ -110,7 +110,7 @@ networkMonitor.on('recv', (frame: CEMIFrame) => {
   console.log(`  APCI: 0x${frame.apci.toString(16)}`);
 });
 
-await networkMonitor.connect();
+await networkMonitor.open();
 // Busmonitor mode is read-only - cannot send frames
 ```
 

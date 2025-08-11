@@ -1,7 +1,7 @@
 import { EventEmitter } from "events";
 import { createSocket, Socket } from "dgram";
 import {
-  KNXNetConnection,
+  KNXBusInterface,
   KNXNetRoutingOptions,
   RoutingIndicationFrame,
   RoutingLostMessageFrame,
@@ -12,7 +12,7 @@ import { CEMIFrame } from "../frames";
 
 export class KNXNetRoutingImpl
   extends EventEmitter
-  implements KNXNetConnection
+  implements KNXBusInterface
 {
   private socket?: Socket;
   private isConnected = false;
@@ -30,7 +30,7 @@ export class KNXNetRoutingImpl
     };
   }
 
-  async connect(): Promise<void> {
+  async open(): Promise<void> {
     if (this.isConnected) {
       return;
     }

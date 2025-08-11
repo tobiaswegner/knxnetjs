@@ -9,7 +9,7 @@ import {
   createUSBBusmonitor,
   KNXUSBImpl,
 } from "./index";
-import { KNXNetConnection, DiscoveryEndpoint } from "./types";
+import { KNXBusInterface, DiscoveryEndpoint } from "./types";
 import { KNX_CONSTANTS } from "./constants";
 import { CEMIFrame } from "./frames";
 
@@ -142,7 +142,7 @@ Examples:
 }
 
 async function startFrameDump(options: CLIOptions): Promise<void> {
-  let connection: KNXNetConnection;
+  let connection: KNXBusInterface;
 
   if (options.usb) {
     // USB KNX interface connection
@@ -236,7 +236,7 @@ async function startFrameDump(options: CLIOptions): Promise<void> {
   });
 
   try {
-    await connection.connect();
+    await connection.open();
     if (options.usb) {
       if (options.busmonitor) {
         console.log(

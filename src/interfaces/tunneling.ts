@@ -1,12 +1,12 @@
 import { EventEmitter } from "events";
 import { createSocket, Socket, RemoteInfo } from "dgram";
-import { KNXNetConnection, KNXNetTunnelingOptions, HPAI } from "../types";
+import { KNXBusInterface, KNXNetTunnelingOptions, HPAI } from "../types";
 import { KNX_CONSTANTS } from "../constants";
 import { CEMIFrame } from "../frames";
 
 export class KNXNetTunnelingImpl
   extends EventEmitter
-  implements KNXNetConnection
+  implements KNXBusInterface
 {
   private socket: Socket | undefined;
   private isConnected = false;
@@ -37,7 +37,7 @@ export class KNXNetTunnelingImpl
     };
   }
 
-  async connect(): Promise<void> {
+  async open(): Promise<void> {
     if (this.isConnected) {
       return;
     }

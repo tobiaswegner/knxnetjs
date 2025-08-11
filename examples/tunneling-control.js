@@ -28,7 +28,7 @@ async function main() {
   
   try {
     // Connect to the gateway
-    await connection.connect();
+    await connection.open();
     console.log('✅ Connected to KNX gateway');
     
     // Example 1: Turn on light at group address 0/1/1

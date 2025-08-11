@@ -1,18 +1,18 @@
-import { KNXNetConnection, KNXUSBOptions } from './types';
+import { KNXBusInterface, KNXUSBOptions } from './types';
 import { KNXNetRoutingImpl } from './interfaces/routing';
 import { KNXNetDiscovery } from './discovery';
 import { KNXNetTunnelingImpl } from './interfaces/tunneling';
 import { KNXUSBImpl } from './interfaces/usb';
 import { CEMIFrame } from './frames';
 
-export function createRouting(multicastAddress?: string, port?: number): KNXNetConnection {
+export function createRouting(multicastAddress?: string, port?: number): KNXBusInterface {
   const connection = new KNXNetRoutingImpl(multicastAddress, port);
   
   // Auto-connect when first used
   const originalSend = connection.send.bind(connection);
   connection.send = async (frame: CEMIFrame) => {
     if (!(connection as any).isConnected) {
-      await connection.connect();
+      await connection.open();
     }
     return originalSend(frame);
   };
@@ -20,19 +20,19 @@ export function createRouting(multicastAddress?: string, port?: number): KNXNetC
   return connection;
 }
 
-export function createTunneling(serverAddress: string, serverPort?: number, localPort?: number): KNXNetConnection {
+export function createTunneling(serverAddress: string, serverPort?: number, localPort?: number): KNXBusInterface {
   return new KNXNetTunnelingImpl(serverAddress, serverPort, localPort);
 }
 
-export function createBusmonitor(serverAddress: string, serverPort?: number, localPort?: number): KNXNetConnection {
+export function createBusmonitor(serverAddress: string, serverPort?: number, localPort?: number): KNXBusInterface {
   return new KNXNetTunnelingImpl(serverAddress, serverPort, localPort, true);
 }
 
-export function createUSB(options?: KNXUSBOptions): KNXNetConnection {
+export function createUSB(options?: KNXUSBOptions): KNXBusInterface {
   return new KNXUSBImpl(options);
 }
 
-export function createUSBBusmonitor(options?: KNXUSBOptions): KNXNetConnection {
+export function createUSBBusmonitor(options?: KNXUSBOptions): KNXBusInterface {
   const usbOptions = { ...options, busmonitorMode: true };
   return new KNXUSBImpl(usbOptions);
 }
@@ -41,7 +41,7 @@ export function createDiscovery(): KNXNetDiscovery {
   return new KNXNetDiscovery();
 }
 
-export { KNXNetConnection, KNXNetRoutingOptions, KNXNetTunnelingOptions, KNXUSBOptions, DiscoveryEndpoint, DiscoveryOptions } from './types';
+export { KNXBusInterface, KNXNetRoutingOptions, KNXNetTunnelingOptions, KNXUSBOptions, DiscoveryEndpoint, DiscoveryOptions } from './types';
 export { KNX_CONSTANTS } from './constants';
 export { KNXNetDiscovery } from './discovery';
 export { KNXNetTunnelingImpl } from './interfaces/tunneling';
