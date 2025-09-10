@@ -2,6 +2,7 @@ import { EventEmitter } from "events";
 import { createSocket, Socket, RemoteInfo } from "dgram";
 import { DiscoveryEndpoint, DiscoveryOptions, HPAI } from "./types";
 import { KNX_CONSTANTS } from "./constants";
+import { KNXnetIPFrame } from "./frames";
 
 export class KNXNetDiscovery extends EventEmitter {
   private socket: Socket | undefined;
@@ -83,17 +84,11 @@ export class KNXNetDiscovery extends EventEmitter {
   }
 
   private createSearchRequestFrame(): Buffer {
-    // KNXnet/IP Header (6 bytes)
-    const header = Buffer.allocUnsafe(6);
-    header.writeUInt8(KNX_CONSTANTS.HEADER_SIZE, 0); // Header size
-    header.writeUInt8(KNX_CONSTANTS.KNXNETIP_VERSION, 1); // Version
-    header.writeUInt16BE(KNX_CONSTANTS.SERVICE_TYPES.SEARCH_REQUEST, 2); // Service type
-    header.writeUInt16BE(14, 4); // Total length (6 + 8)
-
     // Discovery endpoint HPAI (8 bytes)
     const hpai = this.createHPAI();
 
-    return Buffer.concat([header, hpai]);
+    const frame = new KNXnetIPFrame(KNX_CONSTANTS.SERVICE_TYPES.SEARCH_REQUEST, hpai);
+    return frame.toBuffer();
   }
 
   private createHPAI(): Buffer {
@@ -114,25 +109,14 @@ export class KNXNetDiscovery extends EventEmitter {
   }
 
   private handleSearchResponse(msg: Buffer, rinfo: RemoteInfo): void {
-    if (msg.length < KNX_CONSTANTS.HEADER_SIZE) {
-      return;
-    }
-
-    const headerSize = msg.readUInt8(0);
-    const version = msg.readUInt8(1);
-    const serviceType = msg.readUInt16BE(2);
-    const totalLength = msg.readUInt16BE(4);
-
-    if (
-      headerSize !== KNX_CONSTANTS.HEADER_SIZE ||
-      version !== KNX_CONSTANTS.KNXNETIP_VERSION ||
-      serviceType !== KNX_CONSTANTS.SERVICE_TYPES.SEARCH_RESPONSE
-    ) {
-      return;
-    }
-
     try {
-      const endpoint = this.parseSearchResponse(msg, rinfo);
+      const frame = KNXnetIPFrame.fromBuffer(msg);
+      
+      if (frame.service !== KNX_CONSTANTS.SERVICE_TYPES.SEARCH_RESPONSE) {
+        return;
+      }
+
+      const endpoint = this.parseSearchResponse(frame.payload, rinfo);
       const key = `${endpoint.ip}:${endpoint.port}`;
 
       if (!this.discoveredDevices.has(key)) {
@@ -145,37 +129,37 @@ export class KNXNetDiscovery extends EventEmitter {
   }
 
   private parseSearchResponse(
-    msg: Buffer,
+    payload: Buffer,
     rinfo: RemoteInfo
   ): DiscoveryEndpoint {
-    let offset = KNX_CONSTANTS.HEADER_SIZE;
+    let offset = 0;
 
     // Parse Control Endpoint HPAI
-    const controlHpaiLength = msg.readUInt8(offset);
-    const controlEndpoint = this.parseHPAI(msg, offset);
+    const controlHpaiLength = payload.readUInt8(offset);
+    const controlEndpoint = this.parseHPAI(payload, offset);
     offset += controlHpaiLength;
 
     // Parse Device Information DIB
-    const deviceInfoLength = msg.readUInt8(offset);
-    const deviceInfoDescType = msg.readUInt8(offset + 1);
+    const deviceInfoLength = payload.readUInt8(offset);
+    const deviceInfoDescType = payload.readUInt8(offset + 1);
     
     if (deviceInfoDescType !== 0x01) {
       throw new Error(`Expected Device Info DIB (0x01), got 0x${deviceInfoDescType.toString(16)}`);
     }
 
-    const deviceInfo = this.parseDeviceInfoDIB(msg, offset + 2, deviceInfoLength - 2);
+    const deviceInfo = this.parseDeviceInfoDIB(payload, offset + 2, deviceInfoLength - 2);
     offset += deviceInfoLength;
 
     // Parse Supported Service Families DIB
-    const serviceFamiliesLength = msg.readUInt8(offset);
-    const serviceFamiliesDescType = msg.readUInt8(offset + 1);
+    const serviceFamiliesLength = payload.readUInt8(offset);
+    const serviceFamiliesDescType = payload.readUInt8(offset + 1);
     
     if (serviceFamiliesDescType !== 0x02) {
       throw new Error(`Expected Service Families DIB (0x02), got 0x${serviceFamiliesDescType.toString(16)}`);
     }
 
     const serviceFamilies = this.parseServiceFamiliesDIB(
-      msg,
+      payload,
       offset + 2,
       serviceFamiliesLength - 2
     );

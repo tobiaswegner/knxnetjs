@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.10.0] - 2025-09-10
+
+### Added
+- **KNXnetIPFrame Class**: New centralized KNXnet/IP frame handling with proper header parsing and validation
+- Comprehensive unit test suite for KNXnetIPFrame with 12 test cases covering all edge cases
+- KNXnetIPFrame export from frames module for external usage
+
+### Changed
+- **Modernized Frame Handling**: Replaced manual KNXnet/IP frame parsing throughout codebase
+- **Discovery Module**: Updated `createSearchRequestFrame()` and `handleSearchResponse()` to use KNXnetIPFrame
+- **Routing Module**: Refactored `parseKNXNetFrame()` and `createRoutingIndicationFrame()` with KNXnetIPFrame
+- **Tunneling Module**: Modernized all frame creation methods:
+  - `createConnectRequestFrame()` - Connection request frame generation
+  - `createTunnelingRequestFrame()` - Tunneling request frame generation
+  - `sendTunnelingAck()` - Tunneling acknowledgment frame generation
+  - `sendConnectionStateResponse()` - Connection state response frame generation
+  - `sendDisconnectRequest()` - Disconnect request frame generation
+  - `sendConnectionStateRequest()` - Connection state request frame generation
+  - `isTunnelingAck()` and `parseTunnelingAck()` - Tunneling acknowledgment parsing
+
+### Technical Details
+- Centralized KNXnet/IP header validation with proper error handling
+- Consistent 6-byte header format: header size, version, service type, and total length
+- Reduced code duplication across network interface implementations
+- Enhanced maintainability with single source of truth for frame structure
+- Full backward compatibility maintained - all existing functionality preserved
+- Build and test verification confirms no regressions
+
 ## [1.9.0] - 2025-08-11
 
 ### Added

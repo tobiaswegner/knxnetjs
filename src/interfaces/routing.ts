@@ -8,7 +8,7 @@ import {
   RoutingBusyFrame,
 } from "../types";
 import { KNX_CONSTANTS } from "../constants";
-import { CEMIFrame } from "../frames";
+import { CEMIFrame, KNXnetIPFrame } from "../frames";
 
 export class KNXNetRoutingImpl
   extends EventEmitter
@@ -116,63 +116,39 @@ export class KNXNetRoutingImpl
   }
 
   private parseKNXNetFrame(buffer: Buffer): any {
-    if (buffer.length < KNX_CONSTANTS.HEADER_SIZE) {
-      throw new Error("Invalid frame: too short");
-    }
+    const frame = KNXnetIPFrame.fromBuffer(buffer);
+    const data = frame.payload;
 
-    const headerSize = buffer.readUInt8(0);
-    const version = buffer.readUInt8(1);
-    const serviceType = buffer.readUInt16BE(2);
-    const totalLength = buffer.readUInt16BE(4);
-
-    if (
-      headerSize !== KNX_CONSTANTS.HEADER_SIZE ||
-      version !== KNX_CONSTANTS.KNXNETIP_VERSION
-    ) {
-      throw new Error("Invalid frame header");
-    }
-
-    const data = buffer.subarray(headerSize, totalLength);
-
-    switch (serviceType) {
+    switch (frame.service) {
       case KNX_CONSTANTS.SERVICE_TYPES.ROUTING_INDICATION:
         return {
-          serviceType,
+          serviceType: frame.service,
           cemiFrame: data,
         };
 
       case KNX_CONSTANTS.SERVICE_TYPES.ROUTING_LOST_MESSAGE:
         return {
-          serviceType,
+          serviceType: frame.service,
           deviceState: data.readUInt8(1),
           numberOfLostMessages: data.readUInt16BE(2),
         };
 
       case KNX_CONSTANTS.SERVICE_TYPES.ROUTING_BUSY:
         return {
-          serviceType,
+          serviceType: frame.service,
           deviceState: data.readUInt8(1),
           waitTime: data.readUInt16BE(2),
           controlField: data.readUInt16BE(4),
         };
 
       default:
-        throw new Error(`Unknown service type: 0x${serviceType.toString(16)}`);
+        throw new Error(`Unknown service type: 0x${frame.service.toString(16)}`);
     }
   }
 
   private createRoutingIndicationFrame(cemiFrame: Buffer): Buffer {
-    const totalLength = KNX_CONSTANTS.HEADER_SIZE + cemiFrame.length;
-    const frame = Buffer.allocUnsafe(totalLength);
-
-    frame.writeUInt8(KNX_CONSTANTS.HEADER_SIZE, 0);
-    frame.writeUInt8(KNX_CONSTANTS.KNXNETIP_VERSION, 1);
-    frame.writeUInt16BE(KNX_CONSTANTS.SERVICE_TYPES.ROUTING_INDICATION, 2);
-    frame.writeUInt16BE(totalLength, 4);
-
-    cemiFrame.copy(frame, KNX_CONSTANTS.HEADER_SIZE);
-
-    return frame;
+    const frame = new KNXnetIPFrame(KNX_CONSTANTS.SERVICE_TYPES.ROUTING_INDICATION, cemiFrame);
+    return frame.toBuffer();
   }
 
   private handleRoutingIndication(frame: RoutingIndicationFrame): void {

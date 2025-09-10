@@ -2,7 +2,7 @@ import { EventEmitter } from "events";
 import { createSocket, Socket, RemoteInfo } from "dgram";
 import { KNXBusInterface, KNXNetTunnelingOptions, HPAI } from "../types";
 import { KNX_CONSTANTS } from "../constants";
-import { CEMIFrame } from "../frames";
+import { CEMIFrame, KNXnetIPFrame } from "../frames";
 
 export class KNXNetTunnelingImpl
   extends EventEmitter
@@ -210,13 +210,6 @@ export class KNXNetTunnelingImpl
   }
 
   private createConnectRequestFrame(): Buffer {
-    // KNXnet/IP Header (6 bytes)
-    const header = Buffer.allocUnsafe(6);
-    header.writeUInt8(KNX_CONSTANTS.HEADER_SIZE, 0);
-    header.writeUInt8(KNX_CONSTANTS.KNXNETIP_VERSION, 1);
-    header.writeUInt16BE(KNX_CONSTANTS.SERVICE_TYPES.CONNECT_REQUEST, 2);
-    header.writeUInt16BE(26, 4); // Total length: 6 + 8 + 8 + 4
-
     // Control Endpoint HPAI (8 bytes)
     const controlHpai = this.createHPAI(this.localEndpoint!);
 
@@ -236,20 +229,14 @@ export class KNXNetTunnelingImpl
     cri.writeUInt8(layerType, 2); // Layer type
     cri.writeUInt8(0, 3); // Reserved
 
-    return Buffer.concat([header, controlHpai, dataHpai, cri]);
+    const payload = Buffer.concat([controlHpai, dataHpai, cri]);
+    const frame = new KNXnetIPFrame(KNX_CONSTANTS.SERVICE_TYPES.CONNECT_REQUEST, payload);
+    return frame.toBuffer();
   }
 
   private createTunnelingRequestFrame(cemiFrame: Buffer): Buffer {
     const currentSeq = this.sequenceCounter;
     this.sequenceCounter = (this.sequenceCounter + 1) & 0xff;
-
-    // KNXnet/IP Header (6 bytes)
-    const totalLength = 6 + 4 + cemiFrame.length;
-    const header = Buffer.allocUnsafe(6);
-    header.writeUInt8(KNX_CONSTANTS.HEADER_SIZE, 0);
-    header.writeUInt8(KNX_CONSTANTS.KNXNETIP_VERSION, 1);
-    header.writeUInt16BE(KNX_CONSTANTS.SERVICE_TYPES.TUNNELLING_REQUEST, 2);
-    header.writeUInt16BE(totalLength, 4);
 
     // Connection Header (4 bytes)
     const connectionHeader = Buffer.allocUnsafe(4);
@@ -258,7 +245,9 @@ export class KNXNetTunnelingImpl
     connectionHeader.writeUInt8(currentSeq, 2);
     connectionHeader.writeUInt8(0, 3); // Reserved
 
-    return Buffer.concat([header, connectionHeader, cemiFrame]);
+    const payload = Buffer.concat([connectionHeader, cemiFrame]);
+    const frame = new KNXnetIPFrame(KNX_CONSTANTS.SERVICE_TYPES.TUNNELLING_REQUEST, payload);
+    return frame.toBuffer();
   }
 
   private createHPAI(endpoint: HPAI): Buffer {
@@ -303,9 +292,12 @@ export class KNXNetTunnelingImpl
   }
 
   private isTunnelingAck(msg: Buffer): boolean {
-    if (msg.length < 6) return false;
-    const serviceType = msg.readUInt16BE(2);
-    return serviceType === KNX_CONSTANTS.SERVICE_TYPES.TUNNELLING_ACK;
+    try {
+      const frame = KNXnetIPFrame.fromBuffer(msg);
+      return frame.service === KNX_CONSTANTS.SERVICE_TYPES.TUNNELLING_ACK;
+    } catch {
+      return false;
+    }
   }
 
   private parseConnectResponse(
@@ -337,8 +329,9 @@ export class KNXNetTunnelingImpl
   }
 
   private parseTunnelingAck(msg: Buffer): number {
-    // Status is at offset 9 (6 byte header + 4 byte connection header - 1 for status position)
-    return msg.readUInt8(9);
+    const frame = KNXnetIPFrame.fromBuffer(msg);
+    // Status is at offset 3 in payload (4 byte connection header - 1 for status position)
+    return frame.payload.readUInt8(3);
   }
 
   private handleIncomingMessage(msg: Buffer, _rinfo: RemoteInfo): void {
@@ -406,19 +399,15 @@ export class KNXNetTunnelingImpl
       return;
     }
 
-    const ackFrame = Buffer.allocUnsafe(10);
+    // Connection Header (4 bytes)
+    const connectionHeader = Buffer.allocUnsafe(4);
+    connectionHeader.writeUInt8(4, 0); // Structure length
+    connectionHeader.writeUInt8(connectionId, 1);
+    connectionHeader.writeUInt8(sequenceCounter, 2);
+    connectionHeader.writeUInt8(status, 3);
 
-    // KNXnet/IP Header
-    ackFrame.writeUInt8(KNX_CONSTANTS.HEADER_SIZE, 0);
-    ackFrame.writeUInt8(KNX_CONSTANTS.KNXNETIP_VERSION, 1);
-    ackFrame.writeUInt16BE(KNX_CONSTANTS.SERVICE_TYPES.TUNNELLING_ACK, 2);
-    ackFrame.writeUInt16BE(10, 4);
-
-    // Connection Header
-    ackFrame.writeUInt8(4, 6);
-    ackFrame.writeUInt8(connectionId, 7);
-    ackFrame.writeUInt8(sequenceCounter, 8);
-    ackFrame.writeUInt8(status, 9);
+    const frame = new KNXnetIPFrame(KNX_CONSTANTS.SERVICE_TYPES.TUNNELLING_ACK, connectionHeader);
+    const ackFrame = frame.toBuffer();
 
     this.socket.send(
       ackFrame,
@@ -437,20 +426,13 @@ export class KNXNetTunnelingImpl
       return;
     }
 
-    const responseFrame = Buffer.allocUnsafe(8);
+    // Connection ID and Status (2 bytes)
+    const payload = Buffer.allocUnsafe(2);
+    payload.writeUInt8(this.connectionId, 0);
+    payload.writeUInt8(status, 1);
 
-    // KNXnet/IP Header
-    responseFrame.writeUInt8(KNX_CONSTANTS.HEADER_SIZE, 0);
-    responseFrame.writeUInt8(KNX_CONSTANTS.KNXNETIP_VERSION, 1);
-    responseFrame.writeUInt16BE(
-      KNX_CONSTANTS.SERVICE_TYPES.CONNECTIONSTATE_RESPONSE,
-      2
-    );
-    responseFrame.writeUInt16BE(8, 4);
-
-    // Connection ID and Status
-    responseFrame.writeUInt8(this.connectionId, 6);
-    responseFrame.writeUInt8(status, 7);
+    const frame = new KNXnetIPFrame(KNX_CONSTANTS.SERVICE_TYPES.CONNECTIONSTATE_RESPONSE, payload);
+    const responseFrame = frame.toBuffer();
 
     this.socket.send(
       responseFrame,
@@ -464,24 +446,17 @@ export class KNXNetTunnelingImpl
       return;
     }
 
-    const disconnectFrame = Buffer.allocUnsafe(16);
+    // Connection ID and Reserved byte (2 bytes)
+    const connectionInfo = Buffer.allocUnsafe(2);
+    connectionInfo.writeUInt8(this.connectionId, 0);
+    connectionInfo.writeUInt8(0, 1); // Reserved
 
-    // KNXnet/IP Header
-    disconnectFrame.writeUInt8(KNX_CONSTANTS.HEADER_SIZE, 0);
-    disconnectFrame.writeUInt8(KNX_CONSTANTS.KNXNETIP_VERSION, 1);
-    disconnectFrame.writeUInt16BE(
-      KNX_CONSTANTS.SERVICE_TYPES.DISCONNECT_REQUEST,
-      2
-    );
-    disconnectFrame.writeUInt16BE(16, 4);
-
-    // Connection ID
-    disconnectFrame.writeUInt8(this.connectionId, 6);
-    disconnectFrame.writeUInt8(0, 7); // Reserved
-
-    // Control Endpoint HPAI
+    // Control Endpoint HPAI (8 bytes)
     const controlHpai = this.createHPAI(this.localEndpoint!);
-    controlHpai.copy(disconnectFrame, 8);
+
+    const payload = Buffer.concat([connectionInfo, controlHpai]);
+    const frame = new KNXnetIPFrame(KNX_CONSTANTS.SERVICE_TYPES.DISCONNECT_REQUEST, payload);
+    const disconnectFrame = frame.toBuffer();
 
     return new Promise((resolve) => {
       this.socket!.send(
@@ -506,24 +481,17 @@ export class KNXNetTunnelingImpl
       return;
     }
 
-    const requestFrame = Buffer.allocUnsafe(16);
+    // Connection ID and Reserved byte (2 bytes)
+    const connectionInfo = Buffer.allocUnsafe(2);
+    connectionInfo.writeUInt8(this.connectionId, 0);
+    connectionInfo.writeUInt8(0, 1); // Reserved
 
-    // KNXnet/IP Header
-    requestFrame.writeUInt8(KNX_CONSTANTS.HEADER_SIZE, 0);
-    requestFrame.writeUInt8(KNX_CONSTANTS.KNXNETIP_VERSION, 1);
-    requestFrame.writeUInt16BE(
-      KNX_CONSTANTS.SERVICE_TYPES.CONNECTIONSTATE_REQUEST,
-      2
-    );
-    requestFrame.writeUInt16BE(16, 4);
-
-    // Connection ID
-    requestFrame.writeUInt8(this.connectionId, 6);
-    requestFrame.writeUInt8(0, 7); // Reserved
-
-    // Control Endpoint HPAI
+    // Control Endpoint HPAI (8 bytes)
     const controlHpai = this.createHPAI(this.localEndpoint!);
-    controlHpai.copy(requestFrame, 8);
+
+    const payload = Buffer.concat([connectionInfo, controlHpai]);
+    const frame = new KNXnetIPFrame(KNX_CONSTANTS.SERVICE_TYPES.CONNECTIONSTATE_REQUEST, payload);
+    const requestFrame = frame.toBuffer();
 
     this.socket.send(
       requestFrame,
