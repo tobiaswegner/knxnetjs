@@ -9,6 +9,7 @@ import {
   KNXUSBImpl,
   discoverInterfaces,
   KNXInterfaceInformation,
+  createManagement,
 } from "./index";
 import { KNXBusInterface } from "./types";
 import { KNX_CONSTANTS } from "./constants";
@@ -23,6 +24,13 @@ interface CLIOptions {
   usbDevice?: string;
   busmonitor?: boolean;
   help?: boolean;
+  // Property write options
+  interfaceObject?: number;
+  objectInstance?: number;
+  propertyId?: number;
+  numberOfElements?: number;
+  startIndex?: number;
+  data?: string;
 }
 
 function parseArgs(): CLIOptions {
@@ -93,8 +101,73 @@ function parseArgs(): CLIOptions {
           }
         }
         break;
+      case "--interface-object":
+        if (i + 1 < args.length) {
+          const interfaceObjectStr = args[++i];
+          if (interfaceObjectStr) {
+            const interfaceObject = parseInt(interfaceObjectStr, 16);
+            if (!isNaN(interfaceObject)) {
+              options.interfaceObject = interfaceObject;
+            }
+          }
+        }
+        break;
+      case "--object-instance":
+        if (i + 1 < args.length) {
+          const objectInstanceStr = args[++i];
+          if (objectInstanceStr) {
+            const objectInstance = parseInt(objectInstanceStr, 10);
+            if (!isNaN(objectInstance)) {
+              options.objectInstance = objectInstance;
+            }
+          }
+        }
+        break;
+      case "--property-id":
+        if (i + 1 < args.length) {
+          const propertyIdStr = args[++i];
+          if (propertyIdStr) {
+            const propertyId = parseInt(propertyIdStr, 10);
+            if (!isNaN(propertyId)) {
+              options.propertyId = propertyId;
+            }
+          }
+        }
+        break;
+      case "--elements":
+        if (i + 1 < args.length) {
+          const elementsStr = args[++i];
+          if (elementsStr) {
+            const elements = parseInt(elementsStr, 10);
+            if (!isNaN(elements)) {
+              options.numberOfElements = elements;
+            }
+          }
+        }
+        break;
+      case "--start-index":
+        if (i + 1 < args.length) {
+          const startIndexStr = args[++i];
+          if (startIndexStr) {
+            const startIndex = parseInt(startIndexStr, 10);
+            if (!isNaN(startIndex)) {
+              options.startIndex = startIndex;
+            }
+          }
+        }
+        break;
+      case "--data":
+        if (i + 1 < args.length) {
+          const data = args[++i];
+          if (data) {
+            options.data = data;
+          }
+        }
+        break;
       case "dump":
       case "discover":
+      case "writeProperty":
+      case "readProperty":
         break;
       default:
         if (arg && arg.startsWith("-")) {
@@ -117,6 +190,8 @@ Usage: knxnetjs <command> [options]
 Commands:
   dump                    Connect to KNX network and dump all received frames
   discover                Discover KNXnet/IP endpoints on the network
+  writeProperty           Write a property to a KNX interface object
+  readProperty            Read a property from a KNX interface object
 
 Options:
   -a, --address <addr>    Multicast address for routing (default: 224.0.23.12)
@@ -128,7 +203,16 @@ Options:
   --timeout <ms>          Discovery timeout in milliseconds (default: 3000)
   -h, --help              Show this help message
 
+Property Write Options:
+  --interface-object <hex>  Interface object type (hex format, e.g., 0x0008)
+  --object-instance <num>   Object instance (default: 1)
+  --property-id <id>        Property ID (e.g., 52 for PID_COMM_MODE)
+  --elements <count>        Number of elements (default: 1)
+  --start-index <idx>       Start index (default: 1)
+  --data <hex>              Data to write in hex format (e.g., 00 or 00FF)
+
 Examples:
+  # Frame dumping
   knxnetjs dump                              # Dump via routing (multicast)
   knxnetjs dump -a 224.0.23.12 -p 3671     # Custom routing address and port
   knxnetjs dump -t 192.168.1.100            # Dump via tunneling to server
@@ -137,8 +221,18 @@ Examples:
   knxnetjs dump -u                           # Dump via USB interface
   knxnetjs dump -u --usb-device /dev/hidraw0 # Dump via specific USB device
   knxnetjs dump -u --busmonitor              # USB busmonitor mode (read-only)
+  
+  # Discovery
   knxnetjs discover                          # Discover KNX devices
   knxnetjs discover --timeout 5000          # Discover with 5 second timeout
+  
+  # Property writing
+  knxnetjs writeProperty -u --interface-object 0x0008 --property-id 52 --data 00
+  knxnetjs writeProperty -t 192.168.1.100 --interface-object 0x0008 --object-instance 1 --property-id 52 --data 01
+  
+  # Property reading
+  knxnetjs readProperty -u --interface-object 0x0008 --property-id 52
+  knxnetjs readProperty -t 192.168.1.100 --interface-object 0x0008 --object-instance 1 --property-id 52 --elements 2
 `);
 }
 
@@ -294,21 +388,24 @@ function formatCapabilities(capabilities: number): string {
   return caps.length > 0 ? caps.join(", ") : "None";
 }
 
-
 function formatInterfaceResult(interfaceInfo: KNXInterfaceInformation): string {
   let output = `\n┌─ ${interfaceInfo.name}\n`;
   output += `├─ Type: ${interfaceInfo.type.toUpperCase()}\n`;
-  
+
   if (interfaceInfo.description) {
     output += `├─ Description: ${interfaceInfo.description}\n`;
   }
-  
+
   // Network interface details
   if (interfaceInfo.address) {
-    output += `├─ Address: ${interfaceInfo.address}:${interfaceInfo.port || 3671}\n`;
+    output += `├─ Address: ${interfaceInfo.address}:${
+      interfaceInfo.port || 3671
+    }\n`;
   }
   if (interfaceInfo.capabilities !== undefined) {
-    output += `├─ Capabilities: ${formatCapabilities(interfaceInfo.capabilities)}\n`;
+    output += `├─ Capabilities: ${formatCapabilities(
+      interfaceInfo.capabilities
+    )}\n`;
   }
   if (interfaceInfo.knxAddress) {
     output += `├─ KNX Address: ${interfaceInfo.knxAddress}\n`;
@@ -319,16 +416,26 @@ function formatInterfaceResult(interfaceInfo: KNXInterfaceInformation): string {
   if (interfaceInfo.serialNumber) {
     output += `├─ Serial Number: ${interfaceInfo.serialNumber}\n`;
   }
-  if (interfaceInfo.friendlyName && interfaceInfo.friendlyName !== interfaceInfo.name) {
+  if (
+    interfaceInfo.friendlyName &&
+    interfaceInfo.friendlyName !== interfaceInfo.name
+  ) {
     output += `├─ Friendly Name: ${interfaceInfo.friendlyName}\n`;
   }
-  
+
   // USB interface details
   if (interfaceInfo.devicePath) {
     output += `├─ Device Path: ${interfaceInfo.devicePath}\n`;
   }
-  if (interfaceInfo.vendorId !== undefined && interfaceInfo.productId !== undefined) {
-    output += `├─ USB ID: ${interfaceInfo.vendorId.toString(16).padStart(4, '0')}:${interfaceInfo.productId.toString(16).padStart(4, '0')}\n`;
+  if (
+    interfaceInfo.vendorId !== undefined &&
+    interfaceInfo.productId !== undefined
+  ) {
+    output += `├─ USB ID: ${interfaceInfo.vendorId
+      .toString(16)
+      .padStart(4, "0")}:${interfaceInfo.productId
+      .toString(16)
+      .padStart(4, "0")}\n`;
   }
   if (interfaceInfo.manufacturer) {
     output += `├─ Manufacturer: ${interfaceInfo.manufacturer}\n`;
@@ -336,17 +443,17 @@ function formatInterfaceResult(interfaceInfo: KNXInterfaceInformation): string {
   if (interfaceInfo.product) {
     output += `├─ Product: ${interfaceInfo.product}\n`;
   }
-  
+
   // Show supported features
   const features = [];
   if (interfaceInfo.supportsRouting()) features.push("Routing");
   if (interfaceInfo.supportsTunneling()) features.push("Tunneling");
   if (interfaceInfo.supportsBusmonitor()) features.push("Busmonitor");
-  
+
   if (features.length > 0) {
     output += `├─ Supported: ${features.join(", ")}\n`;
   }
-  
+
   output += `└─ Status: Available`;
 
   return output;
@@ -369,7 +476,8 @@ async function startDiscovery(options: CLIOptions): Promise<void> {
         console.log(formatInterfaceResult(interfaceInfo));
       },
       {
-        timeout: options.timeout || KNX_CONSTANTS.DISCOVERY.DEFAULT_SEARCH_TIMEOUT,
+        timeout:
+          options.timeout || KNX_CONSTANTS.DISCOVERY.DEFAULT_SEARCH_TIMEOUT,
         includeUSB: true,
       }
     );
@@ -397,6 +505,234 @@ async function startDiscovery(options: CLIOptions): Promise<void> {
   }
 }
 
+async function writeProperty(options: CLIOptions): Promise<void> {
+  // Validate required options
+  if (options.interfaceObject === undefined) {
+    console.error("Error: --interface-object is required");
+    process.exit(1);
+  }
+  if (options.propertyId === undefined) {
+    console.error("Error: --property-id is required");
+    process.exit(1);
+  }
+  if (!options.data) {
+    console.error("Error: --data is required");
+    process.exit(1);
+  }
+
+  // Set defaults
+  const objectInstance = options.objectInstance ?? 1;
+  const numberOfElements = options.numberOfElements ?? 1;
+  const startIndex = options.startIndex ?? 1;
+
+  // Parse hex data
+  let dataBuffer: Buffer;
+  try {
+    const hexData = options.data.replace(/\s/g, ""); // Remove spaces
+    dataBuffer = Buffer.from(hexData, "hex");
+  } catch (error) {
+    console.error("Error: Invalid hex data format");
+    process.exit(1);
+  }
+
+  console.log("Property Write Operation");
+  console.log(
+    `Interface Object: 0x${options.interfaceObject
+      .toString(16)
+      .padStart(4, "0")
+      .toUpperCase()}`
+  );
+  console.log(`Object Instance: ${objectInstance}`);
+  console.log(`Property ID: ${options.propertyId}`);
+  console.log(`Number of Elements: ${numberOfElements}`);
+  console.log(`Start Index: ${startIndex}`);
+  console.log(`Data: ${dataBuffer.toString("hex").toUpperCase()}`);
+
+  let connection: KNXBusInterface | undefined;
+
+  try {
+    if (options.usb) {
+      // USB KNX interface connection
+      const usbOptions = {
+        ...(options.usbDevice && { devicePath: options.usbDevice }),
+      };
+
+      console.log("\nConnecting to USB KNX interface...");
+      connection = createUSB(usbOptions);
+    } else if (options.tunnel) {
+      // Parse tunnel address
+      const tunnelParts = options.tunnel.split(":");
+      const serverAddress = tunnelParts[0];
+      if (!serverAddress) {
+        throw new Error("Invalid tunnel address format");
+      }
+      const serverPort = tunnelParts[1]
+        ? parseInt(tunnelParts[1], 10)
+        : undefined;
+
+      console.log(
+        `\nConnecting to tunneling server ${serverAddress}:${
+          serverPort || 3671
+        }...`
+      );
+      connection = createManagement(serverAddress, serverPort);
+    } else {
+      console.error(
+        "Error: Property write requires either USB (-u) or tunneling (-t) connection"
+      );
+      console.error(
+        "Routing connections do not support property write operations"
+      );
+      process.exit(1);
+    }
+
+    // Set up error handling
+    connection.on("error", (error: Error) => {
+      console.error("Connection error:", error.message);
+      process.exit(1);
+    });
+
+    // Open connection
+    await connection.open();
+    console.log("Connected successfully!");
+
+    // Write property
+    console.log("\nWriting property...");
+    await connection.writeProperty(
+      options.interfaceObject,
+      objectInstance,
+      options.propertyId,
+      numberOfElements,
+      startIndex,
+      dataBuffer
+    );
+
+    console.log("Property write completed successfully!");
+  } catch (error) {
+    console.error("Failed to write property:", (error as Error).message);
+  } finally {
+    // Always close connection
+    if (connection) {
+      try {
+        await connection.close();
+        console.log("Connection closed.");
+      } catch (closeError) {
+        console.error(
+          "Error closing connection:",
+          (closeError as Error).message
+        );
+      }
+    }
+  }
+}
+
+async function readProperty(options: CLIOptions): Promise<void> {
+  // Validate required options
+  if (options.interfaceObject === undefined) {
+    console.error("Error: --interface-object is required");
+    process.exit(1);
+  }
+  if (options.propertyId === undefined) {
+    console.error("Error: --property-id is required");
+    process.exit(1);
+  }
+
+  // Set defaults
+  const objectInstance = options.objectInstance ?? 1;
+  const numberOfElements = options.numberOfElements ?? 1;
+  const startIndex = options.startIndex ?? 1;
+
+  console.log("Property Read Operation");
+  console.log(
+    `Interface Object: 0x${options.interfaceObject
+      .toString(16)
+      .padStart(4, "0")
+      .toUpperCase()}`
+  );
+  console.log(`Object Instance: ${objectInstance}`);
+  console.log(`Property ID: ${options.propertyId}`);
+  console.log(`Number of Elements: ${numberOfElements}`);
+  console.log(`Start Index: ${startIndex}`);
+
+  let connection: KNXBusInterface | undefined;
+
+  try {
+    if (options.usb) {
+      // USB KNX interface connection
+      const usbOptions = {
+        ...(options.usbDevice && { devicePath: options.usbDevice }),
+      };
+
+      console.log("\nConnecting to USB KNX interface...");
+      connection = createUSB(usbOptions);
+    } else if (options.tunnel) {
+      // Parse tunnel address
+      const tunnelParts = options.tunnel.split(":");
+      const serverAddress = tunnelParts[0];
+      if (!serverAddress) {
+        throw new Error("Invalid tunnel address format");
+      }
+      const serverPort = tunnelParts[1]
+        ? parseInt(tunnelParts[1], 10)
+        : undefined;
+
+      console.log(
+        `\nConnecting to tunneling server ${serverAddress}:${
+          serverPort || 3671
+        }...`
+      );
+      connection = createManagement(serverAddress, serverPort);
+    } else {
+      console.error(
+        "Error: Property read requires either USB (-u) or tunneling (-t) connection"
+      );
+      console.error(
+        "Routing connections do not support property read operations"
+      );
+      process.exit(1);
+    }
+
+    // Set up error handling
+    connection.on("error", (error: Error) => {
+      console.error("Connection error:", error.message);
+      process.exit(1);
+    });
+
+    // Open connection
+    await connection.open();
+    console.log("Connected successfully!");
+
+    // Read property
+    console.log("\nReading property...");
+    const result = await connection.readProperty(
+      options.interfaceObject,
+      objectInstance,
+      options.propertyId,
+      numberOfElements,
+      startIndex
+    );
+
+    console.log("Property read completed successfully!");
+    console.log(`Data: ${result.toString("hex").toUpperCase()}`);
+    console.log(`Data (decimal): [${Array.from(result).join(", ")}]`);
+  } catch (error) {
+    console.error("Failed to read property:", (error as Error).message);
+  } finally {
+    // Always close connection
+    if (connection) {
+      try {
+        await connection.close();
+        console.log("Connection closed.");
+      } catch (closeError) {
+        console.error(
+          "Error closing connection:",
+          (closeError as Error).message
+        );
+      }
+    }
+  }
+}
+
 async function main(): Promise<void> {
   const options = parseArgs();
   const args = process.argv.slice(2);
@@ -410,6 +746,10 @@ async function main(): Promise<void> {
     await startFrameDump(options);
   } else if (args[0] === "discover") {
     await startDiscovery(options);
+  } else if (args[0] === "writeProperty") {
+    await writeProperty(options);
+  } else if (args[0] === "readProperty") {
+    await readProperty(options);
   } else {
     console.error(`Unknown command: ${args[0]}`);
     console.error('Use "knxnetjs --help" for usage information');

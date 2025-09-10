@@ -89,6 +89,27 @@ export class KNXNetRoutingImpl
     }
   }
 
+  async writeProperty(
+    interfaceObject: number,
+    objectInstance: number,
+    propertyId: number,
+    numberOfElements: number,
+    startIndex: number,
+    data: Buffer
+  ): Promise<void> {
+    throw new Error("writeProperty is not implemented for KNX routing connections");
+  }
+
+  async readProperty(
+    interfaceObject: number,
+    objectInstance: number,
+    propertyId: number,
+    numberOfElements: number,
+    startIndex: number
+  ): Promise<Buffer> {
+    throw new Error("readProperty is not implemented for KNX routing connections");
+  }
+
   on(event: "recv", listener: (frame: CEMIFrame) => void): this;
   on(event: "error", listener: (error: Error) => void): this;
   on(event: string, listener: (...args: any[]) => void): this {

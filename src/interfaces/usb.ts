@@ -6,6 +6,8 @@ import { KNXHIDReport } from "../frames/knx-hid-report";
 import { KNXUSBTransferEMIId } from "../frames/knx-usb-transfer";
 import {
   CEMIPropertyWrite,
+  CEMIPropertyReadReq,
+  CEMIPropertyReadCon,
   DPT_CommMode,
   Properties,
 } from "../frames/cemi-properties";
@@ -92,6 +94,89 @@ export class KNXUSBImpl extends EventEmitter implements KNXBusInterface {
       }
       this.isConnected = false;
     }
+  }
+
+  async writeProperty(
+    interfaceObject: number,
+    objectInstance: number,
+    propertyId: number,
+    numberOfElements: number,
+    startIndex: number,
+    data: Buffer
+  ): Promise<void> {
+    if (!this.isConnected || !this.hidDevice) {
+      throw new Error("USB KNX device not connected");
+    }
+
+    const propertyWrite = new CEMIPropertyWrite(
+      interfaceObject,
+      objectInstance,
+      propertyId,
+      numberOfElements,
+      startIndex,
+      data
+    );
+
+    const usbFrame = KNXUSBTransferFrame.createForCEMI(propertyWrite.toBuffer());
+    const hidFrame = this.createHIDFrame(usbFrame.toBuffer());
+
+    return new Promise((resolve, reject) => {
+      try {
+        this.hidDevice!.write(hidFrame);
+        resolve();
+      } catch (error) {
+        reject(error);
+      }
+    });
+  }
+
+  async readProperty(
+    interfaceObject: number,
+    objectInstance: number,
+    propertyId: number,
+    numberOfElements: number,
+    startIndex: number
+  ): Promise<Buffer> {
+    if (!this.isConnected || !this.hidDevice) {
+      throw new Error("USB KNX device not connected");
+    }
+
+    const propertyRead = new CEMIPropertyReadReq(
+      interfaceObject,
+      objectInstance,
+      propertyId,
+      numberOfElements,
+      startIndex
+    );
+
+    const usbFrame = KNXUSBTransferFrame.createForCEMI(propertyRead.toBuffer());
+    const hidFrame = this.createHIDFrame(usbFrame.toBuffer());
+
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error("Property read timeout"));
+      }, 5000);
+
+      // Set up one-time response listener for property read confirmation
+      const responseHandler = (frame: CEMIFrame) => {
+        if (frame.messageCode === CEMIMessageCode.M_PROP_READ_CON) {
+          clearTimeout(timeout);
+          this.off("recv", responseHandler);
+          // Return the frame data which contains the property value
+          resolve(frame.data);
+        }
+      };
+
+      this.on("recv", responseHandler);
+
+      try {
+        this.hidDevice!.write(hidFrame);
+      } catch (error) {
+        clearTimeout(timeout);
+        this.off("recv", responseHandler);
+        reject(error);
+      }
+    });
   }
 
   /**

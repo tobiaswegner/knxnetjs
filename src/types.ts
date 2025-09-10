@@ -7,6 +7,21 @@ export interface KNXBusInterface extends EventEmitter {
   on(event: "error", listener: (error: Error) => void): this;
   open(): Promise<void>;
   close(): Promise<void>;
+  writeProperty(
+    interfaceObject: number,
+    objectInstance: number,
+    propertyId: number,
+    numberOfElements: number,
+    startIndex: number,
+    data: Buffer
+  ): Promise<void>;
+  readProperty(
+    interfaceObject: number,
+    objectInstance: number,
+    propertyId: number,
+    numberOfElements: number,
+    startIndex: number
+  ): Promise<Buffer>;
 }
 
 export interface KNXRoutingFrame {
@@ -71,6 +86,13 @@ export interface KNXNetTunnelingOptions {
   busmonitorMode?: boolean;
 }
 
+export interface KNXNetManagementOptions {
+  serverAddress: string;
+  serverPort?: number;
+  localPort?: number;
+  connectionTimeout?: number;
+}
+
 export interface KNXUSBOptions {
   devicePath?: string;
   baudRate?: number;
@@ -79,16 +101,16 @@ export interface KNXUSBOptions {
 }
 
 export enum KNXInterfaceType {
-  ROUTING = 'routing',
-  TUNNELING = 'tunneling',
-  USB = 'usb'
+  ROUTING = "routing",
+  TUNNELING = "tunneling",
+  USB = "usb",
 }
 
 export interface KNXInterfaceInformation {
   type: KNXInterfaceType;
   name: string;
   description?: string;
-  
+
   // Network interface properties (routing/tunneling)
   address?: string;
   port?: number;
@@ -97,7 +119,7 @@ export interface KNXInterfaceInformation {
   macAddress?: string;
   serialNumber?: string;
   friendlyName?: string;
-  
+
   // USB interface properties
   devicePath?: string;
   vendorId?: number;

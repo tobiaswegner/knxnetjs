@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.11.0] - 2025-09-10
+
+### Added
+- **Device Management Support**: Full KNX device management with property read and write operations
+- **Management Interface**: Added KNXNetManagementImpl class to perform device management
+- Enhanced device configuration handling with proper ACK responses
+- Updated all interface implementations (USB, Tunneling, Management) to use refactored property classes
+- **Device Configuration ACK**: Proper 4-byte connection header with sequence counter support
+- **CLI Property Commands**: New `writeProperty` and `readProperty` commands for device management
+- **Property Read Request**: Added `CEMIPropertyReadReq` class to create M_PROP_READ_REQ requests
+- **Property Read Confirmations**: Added `CEMIPropertyReadCon` class to handle M_PROP_READ_CON responses
+
 ## [1.10.0] - 2025-09-10
 
 ### Added

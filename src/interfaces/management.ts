@@ -3,9 +3,13 @@ import { createSocket, Socket, RemoteInfo } from "dgram";
 import { KNXBusInterface, KNXNetTunnelingOptions, HPAI } from "../types";
 import { KNX_CONSTANTS } from "../constants";
 import { CEMIFrame, KNXnetIPFrame, CEMIMessageCode } from "../frames";
-import { CEMIPropertyWrite, CEMIPropertyReadReq, CEMIPropertyReadCon } from "../frames/cemi-properties";
+import {
+  CEMIPropertyWrite,
+  CEMIPropertyReadReq,
+  CEMIPropertyReadCon,
+} from "../frames/cemi-properties";
 
-export class KNXNetTunnelingImpl
+export class KNXNetManagementImpl
   extends EventEmitter
   implements KNXBusInterface
 {
@@ -55,53 +59,9 @@ export class KNXNetTunnelingImpl
   }
 
   async send(frame: CEMIFrame): Promise<void> {
-    if (!this.isConnected || !this.socket || !this.serverEndpoint) {
-      throw new Error("Not connected to tunneling server");
-    }
-
-    // In busmonitor mode, typically no frames are sent - this is monitor-only
-    if (this.busmonitorMode) {
-      throw new Error(
-        "Cannot send frames in busmonitor mode - this is a monitor-only connection"
-      );
-    }
-
-    const tunnelFrame = this.createTunnelingRequestFrame(frame.toBuffer());
-
-    return new Promise((resolve, reject) => {
-      const timeoutId = setTimeout(() => {
-        reject(new Error("Tunneling request timeout"));
-      }, this.options.connectionTimeout);
-
-      const handleAck = (msg: Buffer, rinfo: RemoteInfo) => {
-        if (this.isTunnelingAck(msg)) {
-          clearTimeout(timeoutId);
-          this.socket!.off("message", handleAck);
-
-          const status = this.parseTunnelingAck(msg);
-          if (status === KNX_CONSTANTS.ERROR_CODES.E_NO_ERROR) {
-            resolve();
-          } else {
-            reject(new Error(`Tunneling error: 0x${status.toString(16)}`));
-          }
-        }
-      };
-
-      this.socket!.on("message", handleAck);
-
-      this.socket!.send(
-        tunnelFrame,
-        this.serverEndpoint!.port,
-        this.serverEndpoint!.address,
-        (err) => {
-          if (err) {
-            clearTimeout(timeoutId);
-            this.socket!.off("message", handleAck);
-            reject(err);
-          }
-        }
-      );
-    });
+    throw new Error(
+      "send is not implemented for KNX device management connections"
+    );
   }
 
   async close(): Promise<void> {
@@ -313,10 +273,15 @@ export class KNXNetTunnelingImpl
   }
 
   private createDeviceConfigurationFrame(propertyData: Buffer): Buffer {
+    const currentSeq = this.sequenceCounter;
+    this.sequenceCounter = (this.sequenceCounter + 1) & 0xff;
+
     // Connection Header (4 bytes)
-    const connectionHeader = Buffer.allocUnsafe(2);
-    connectionHeader.writeUInt8(2, 0); // Structure length
-    connectionHeader.writeUInt8(3, 1); // Device management connection
+    const connectionHeader = Buffer.allocUnsafe(4);
+    connectionHeader.writeUInt8(4, 0); // Structure length
+    connectionHeader.writeUInt8(this.connectionId, 1);
+    connectionHeader.writeUInt8(currentSeq, 2);
+    connectionHeader.writeUInt8(0, 3); // Reserved
 
     const payload = Buffer.concat([connectionHeader, propertyData]);
     const frame = new KNXnetIPFrame(
@@ -334,17 +299,9 @@ export class KNXNetTunnelingImpl
     const dataHpai = this.createHPAI(this.localEndpoint!);
 
     // Connection Request Information (4 bytes)
-    const cri = Buffer.allocUnsafe(4);
-    cri.writeUInt8(4, 0); // Structure length
-    cri.writeUInt8(KNX_CONSTANTS.TUNNELING.CONNECTION_TYPE, 1); // Always tunneling connection type
-
-    // Use appropriate layer type based on busmonitor mode
-    const layerType = this.busmonitorMode
-      ? KNX_CONSTANTS.TUNNELING.LAYER_TYPE_BUSMONITOR
-      : KNX_CONSTANTS.TUNNELING.LAYER_TYPE_TUNNEL_LINKLAYER;
-
-    cri.writeUInt8(layerType, 2); // Layer type
-    cri.writeUInt8(0, 3); // Reserved
+    const cri = Buffer.allocUnsafe(2);
+    cri.writeUInt8(2, 0); // Structure length
+    cri.writeUInt8(KNX_CONSTANTS.MANAGEMENT.CONNECTION_TYPE, 1); // Always tunneling connection type
 
     const payload = Buffer.concat([controlHpai, dataHpai, cri]);
     const frame = new KNXnetIPFrame(
@@ -466,6 +423,9 @@ export class KNXNetTunnelingImpl
       const serviceType = msg.readUInt16BE(2);
 
       switch (serviceType) {
+        case KNX_CONSTANTS.SERVICE_TYPES.DEVICE_CONFIGURATION_REQUEST:
+          this.handleDeviceConfigurationRequest(msg);
+          break;
         case KNX_CONSTANTS.SERVICE_TYPES.TUNNELLING_REQUEST:
           this.handleTunnelingRequest(msg);
           break;
@@ -476,6 +436,29 @@ export class KNXNetTunnelingImpl
       }
     } catch (error) {
       this.emit("error", error);
+    }
+  }
+
+  private handleDeviceConfigurationRequest(msg: Buffer): void {
+    let offset = KNX_CONSTANTS.HEADER_SIZE;
+
+    // Connection Header (4 bytes)
+    const connectionId = msg.readUInt8(offset + 1);
+    const sequenceCounter = msg.readUInt8(offset + 2);
+    offset += 4;
+
+    // Send ACK
+    this.sendDeviceConfigurationAck(
+      connectionId,
+      sequenceCounter,
+      KNX_CONSTANTS.ERROR_CODES.E_NO_ERROR
+    );
+
+    // Extract cEMI frame
+    const cemiFrameBuffer = msg.subarray(offset);
+    const cemiFrame = CEMIPropertyReadCon.fromBuffer(cemiFrameBuffer);
+    if (cemiFrame.isValid()) {
+      this.emit("recv", cemiFrame);
     }
   }
 
@@ -531,6 +514,35 @@ export class KNXNetTunnelingImpl
 
     const frame = new KNXnetIPFrame(
       KNX_CONSTANTS.SERVICE_TYPES.TUNNELLING_ACK,
+      connectionHeader
+    );
+    const ackFrame = frame.toBuffer();
+
+    this.socket.send(
+      ackFrame,
+      this.serverEndpoint.port,
+      this.serverEndpoint.address
+    );
+  }
+
+  private sendDeviceConfigurationAck(
+    connectionId: number,
+    sequenceCounter: number,
+    status: number
+  ): void {
+    if (!this.socket || !this.serverEndpoint) {
+      return;
+    }
+
+    // Connection Header (4 bytes)
+    const connectionHeader = Buffer.allocUnsafe(4);
+    connectionHeader.writeUInt8(4, 0); // Structure length
+    connectionHeader.writeUInt8(connectionId, 1);
+    connectionHeader.writeUInt8(sequenceCounter, 2);
+    connectionHeader.writeUInt8(status, 3);
+
+    const frame = new KNXnetIPFrame(
+      KNX_CONSTANTS.SERVICE_TYPES.DEVICE_CONFIGURATION_ACK,
       connectionHeader
     );
     const ackFrame = frame.toBuffer();
