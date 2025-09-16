@@ -20,6 +20,7 @@ export class KNXInterfaceInformationImpl implements KNXInterfaceInformation {
   // Network interface properties (routing/tunneling)
   public readonly address?: string;
   public readonly port?: number;
+  public readonly protocol?: number;
   public readonly capabilities?: number;
   public readonly knxAddress?: string;
   public readonly macAddress?: string;
@@ -33,12 +34,21 @@ export class KNXInterfaceInformationImpl implements KNXInterfaceInformation {
   public readonly manufacturer?: string;
   public readonly product?: string;
 
-  constructor(info: Omit<KNXInterfaceInformation, 'supportsTunneling' | 'supportsRouting' | 'supportsBusmonitor' | 'toString'>) {
+  constructor(
+    info: Omit<
+      KNXInterfaceInformation,
+      | "supportsTunneling"
+      | "supportsRouting"
+      | "supportsBusmonitor"
+      | "toString"
+    >
+  ) {
     this.type = info.type;
     this.name = info.name;
     if (info.description !== undefined) this.description = info.description;
     if (info.address !== undefined) this.address = info.address;
     if (info.port !== undefined) this.port = info.port;
+    if (info.protocol !== undefined) this.protocol = info.protocol;
     if (info.capabilities !== undefined) this.capabilities = info.capabilities;
     if (info.knxAddress !== undefined) this.knxAddress = info.knxAddress;
     if (info.macAddress !== undefined) this.macAddress = info.macAddress;
@@ -128,6 +138,7 @@ export async function discoverInterfaces(
           description: "KNX/IP Routing Interface",
           address: endpoint.ip,
           port: endpoint.port,
+          protocol: endpoint.protocol,
           capabilities: endpoint.capabilities,
           ...(endpoint.knxAddress && { knxAddress: endpoint.knxAddress }),
           ...(endpoint.macAddress && { macAddress: endpoint.macAddress }),
@@ -219,7 +230,9 @@ export function createInterface(
 
     case KNXInterfaceType.USB:
       const usbOptions: KNXUSBOptions = {
-        ...(interfaceInfo.devicePath && { devicePath: interfaceInfo.devicePath }),
+        ...(interfaceInfo.devicePath && {
+          devicePath: interfaceInfo.devicePath,
+        }),
         busmonitorMode,
       };
       return new KNXUSBImpl(usbOptions);

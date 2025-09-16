@@ -168,6 +168,7 @@ export class KNXNetDiscovery extends EventEmitter {
       name: deviceInfo.friendlyName || `KNX Device ${rinfo.address}`,
       ip: rinfo.address,
       port: controlEndpoint.port,
+      protocol: controlEndpoint.hostProtocol,
       capabilities: this.calculateCapabilities(serviceFamilies),
       deviceState: deviceInfo.deviceStatus || 0,
       knxAddress: deviceInfo.knxAddress,

@@ -3,7 +3,11 @@ import { createSocket, Socket, RemoteInfo } from "dgram";
 import { KNXBusInterface, KNXNetTunnelingOptions, HPAI } from "../types";
 import { KNX_CONSTANTS } from "../constants";
 import { CEMIFrame, KNXnetIPFrame, CEMIMessageCode } from "../frames";
-import { CEMIPropertyWrite, CEMIPropertyReadReq, CEMIPropertyReadCon } from "../frames/cemi-properties";
+import {
+  CEMIPropertyWrite,
+  CEMIPropertyReadReq,
+  CEMIPropertyReadCon,
+} from "../frames/cemi-properties";
 
 export class KNXNetTunnelingImpl
   extends EventEmitter

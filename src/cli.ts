@@ -397,10 +397,21 @@ function formatInterfaceResult(interfaceInfo: KNXInterfaceInformation): string {
   }
 
   // Network interface details
+  let protocol: string | undefined;
+  if (interfaceInfo.protocol) {
+    switch (interfaceInfo.protocol) {
+      case 1:
+        protocol = "UDP";
+        break;
+      case 2:
+        protocol = "TCP";
+        break;
+    }
+  }
   if (interfaceInfo.address) {
     output += `├─ Address: ${interfaceInfo.address}:${
       interfaceInfo.port || 3671
-    }\n`;
+    }${protocol ? " (" + protocol + ")" : ""}\n`;
   }
   if (interfaceInfo.capabilities !== undefined) {
     output += `├─ Capabilities: ${formatCapabilities(

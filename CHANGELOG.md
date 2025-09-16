@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.11.2] - 2025-09-16
+
+### Added
+- **Protocol Information Display**: Enhanced interface discovery to show protocol type (UDP/TCP) in CLI output
+- **Discovery Protocol Support**: Added `protocol` field to `DiscoveryEndpoint` and `KNXInterfaceInformation` interfaces
+- **Enhanced CLI Interface Display**: Network addresses now show protocol type, e.g., "192.168.1.100:3671 (UDP)"
+
+### Changed
+- **Interface Discovery Enhancement**: Updated discovery system to capture and display host protocol information
+- **CLI Formatting**: Improved interface display formatting with protocol information in `src/cli.ts:400`
+- **Type Definitions**: Extended interface types to include protocol field in `src/types.ts:118`
+
+### Technical Details
+- Protocol field mapping: 1 = UDP, 2 = TCP according to KNXnet/IP specification
+- Enhanced `formatInterfaceResult()` function with protocol display logic
+- Updated `KNXInterfaceInformationImpl` constructor to handle protocol parameter
+- Code formatting improvements in tunneling interface imports
+
 ## [1.11.1] - 2025-09-16
 
 ### Fixed

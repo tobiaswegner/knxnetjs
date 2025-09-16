@@ -57,6 +57,7 @@ export interface DiscoveryEndpoint {
   name: string;
   ip: string;
   port: number;
+  protocol: number;
   capabilities: number;
   deviceState: number;
   knxAddress?: string;
@@ -114,6 +115,7 @@ export interface KNXInterfaceInformation {
   // Network interface properties (routing/tunneling)
   address?: string;
   port?: number;
+  protocol?: number;
   capabilities?: number;
   knxAddress?: string;
   macAddress?: string;
