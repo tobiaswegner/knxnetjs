@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.11.1] - 2025-09-16
+
+### Fixed
+- **Tunneling Connection Error Handling**: Added proper error status validation in `parseConnectResponse` method in `src/interfaces/tunneling.ts:444`
+- Early return when connection response status indicates error, preventing invalid data endpoint parsing
+
 ## [1.11.0] - 2025-09-10
 
 ### Added

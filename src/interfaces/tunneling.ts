@@ -437,6 +437,14 @@ export class KNXNetTunnelingImpl
     const status = msg.readUInt8(offset);
     offset += 1;
 
+    if (status != KNX_CONSTANTS.ERROR_CODES.E_NO_ERROR) {
+      return {
+        status,
+        connectionId,
+        dataEndpoint: { hostProtocol: 0, address: "", port: 0 },
+      };
+    }
+
     // Data Endpoint HPAI (8 bytes)
     const dataEndpoint = this.parseHPAI(msg, offset);
 
