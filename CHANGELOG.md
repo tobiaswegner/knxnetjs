@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.11.3] - 2025-09-27
+
+### Added
+- **HPAI Class Implementation**: New Host Protocol Address Info class for robust network endpoint handling
+- **Comprehensive Type Safety**: Full TypeScript implementation with serialization/deserialization methods
+- **KNXnet/IP Protocol Compliance**: Proper port 0 validation (use source port from UDP packet)
+- **Binary Format Validation**: 8-byte structure with proper header and field validation
+- **Complete Test Suite**: 26 unit tests covering serialization, validation, and edge cases
+
+### Changed
+- **Modernized Network Interfaces**: Updated tunneling, discovery, and management interfaces to use HPAI class
+- **Enhanced Validation**: Port range updated to 0-65535 (port 0 is valid in KNXnet/IP protocol)
+- **Improved Error Handling**: Clear error messages for invalid buffers, protocols, and addresses
+- **Code Consolidation**: Replaced manual buffer operations with standardized HPAI methods
+
+### Fixed
+- **Port 0 Validation**: Fixed "Invalid port number: 0" error in discovery responses
+- **Protocol Compliance**: Corrected port validation to match KNXnet/IP specification
+- **Buffer Parsing**: Robust IPv4 address validation and network byte order handling
+
+### Technical Details
+- HPAI class provides `fromBuffer()`, `toBuffer()`, `isValid()`, and `toString()` methods
+- Support for UDP (0x01) and TCP (0x02) protocol types
+- Network byte order serialization for cross-platform compatibility
+- Specification document with complete implementation guidelines
+- File organization: `src/types/hpai.ts`, `src/types/hpai.test.ts`, `src/types/hpai.md`
+
 ## [1.11.2] - 2025-09-16
 
 ### Added

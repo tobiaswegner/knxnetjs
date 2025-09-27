@@ -1,6 +1,7 @@
 import { EventEmitter } from "events";
 import { createSocket, Socket, RemoteInfo } from "dgram";
 import { KNXBusInterface, KNXNetTunnelingOptions, HPAI } from "../types";
+import { HostProtocol } from "../types/hpai";
 import { KNX_CONSTANTS } from "../constants";
 import { CEMIFrame, KNXnetIPFrame, CEMIMessageCode } from "../frames";
 import {
@@ -252,11 +253,11 @@ export class KNXNetTunnelingImpl
 
       this.socket.on("listening", () => {
         const address = this.socket!.address();
-        this.localEndpoint = {
-          hostProtocol: 0x01, // UDP
-          address: "0.0.0.0", // Any interface
-          port: address.port,
-        };
+        this.localEndpoint = new HPAI(
+          HostProtocol.IPV4_UDP,
+          "0.0.0.0", // Any interface
+          address.port
+        );
         resolve();
       });
 
@@ -332,10 +333,10 @@ export class KNXNetTunnelingImpl
 
   private createConnectRequestFrame(): Buffer {
     // Control Endpoint HPAI (8 bytes)
-    const controlHpai = this.createHPAI(this.localEndpoint!);
+    const controlHpai = this.localEndpoint!.toBuffer();
 
     // Data Endpoint HPAI (8 bytes)
-    const dataHpai = this.createHPAI(this.localEndpoint!);
+    const dataHpai = this.localEndpoint!.toBuffer();
 
     // Connection Request Information (4 bytes)
     const cri = Buffer.allocUnsafe(4);
@@ -377,39 +378,11 @@ export class KNXNetTunnelingImpl
     return frame.toBuffer();
   }
 
-  private createHPAI(endpoint: HPAI): Buffer {
-    const hpai = Buffer.allocUnsafe(8);
-    hpai.writeUInt8(8, 0); // Structure length
-    hpai.writeUInt8(endpoint.hostProtocol, 1);
-
-    const ipParts =
-      endpoint.address === "0.0.0.0"
-        ? [0, 0, 0, 0]
-        : endpoint.address.split(".").map((x: string) => parseInt(x, 10));
-    hpai.writeUInt8(ipParts[0] || 0, 2);
-    hpai.writeUInt8(ipParts[1] || 0, 3);
-    hpai.writeUInt8(ipParts[2] || 0, 4);
-    hpai.writeUInt8(ipParts[3] || 0, 5);
-    hpai.writeUInt16BE(endpoint.port, 6);
-
-    return hpai;
-  }
 
   private parseHPAI(buffer: Buffer, offset: number): HPAI {
-    const hostProtocol = buffer.readUInt8(offset + 1);
-    const ip = [
-      buffer.readUInt8(offset + 2),
-      buffer.readUInt8(offset + 3),
-      buffer.readUInt8(offset + 4),
-      buffer.readUInt8(offset + 5),
-    ].join(".");
-    const port = buffer.readUInt16BE(offset + 6);
-
-    return {
-      hostProtocol,
-      address: ip,
-      port,
-    };
+    // Parse HPAI from buffer at offset
+    const hapiBuffer = buffer.subarray(offset, offset + 8);
+    return HPAI.fromBuffer(hapiBuffer);
   }
 
   private isConnectResponse(msg: Buffer): boolean {
@@ -445,7 +418,7 @@ export class KNXNetTunnelingImpl
       return {
         status,
         connectionId,
-        dataEndpoint: { hostProtocol: 0, address: "", port: 0 },
+        dataEndpoint: new HPAI(HostProtocol.IPV4_UDP, "0.0.0.0", 0),
       };
     }
 
@@ -453,14 +426,16 @@ export class KNXNetTunnelingImpl
     const dataEndpoint = this.parseHPAI(msg, offset);
 
     // Use server's address and port if data endpoint is 0.0.0.0:0
-    if (dataEndpoint.address === "0.0.0.0") {
-      dataEndpoint.address = rinfo.address;
-    }
-    if (dataEndpoint.port === 0) {
-      dataEndpoint.port = rinfo.port;
+    let finalEndpoint = dataEndpoint;
+    if (dataEndpoint.address === "0.0.0.0" || dataEndpoint.port === 0) {
+      finalEndpoint = new HPAI(
+        dataEndpoint.hostProtocol,
+        dataEndpoint.address === "0.0.0.0" ? rinfo.address : dataEndpoint.address,
+        dataEndpoint.port === 0 ? rinfo.port : dataEndpoint.port
+      );
     }
 
-    return { status, connectionId, dataEndpoint };
+    return { status, connectionId, dataEndpoint: finalEndpoint };
   }
 
   private parseTunnelingAck(msg: Buffer): number {
@@ -593,7 +568,7 @@ export class KNXNetTunnelingImpl
     connectionInfo.writeUInt8(0, 1); // Reserved
 
     // Control Endpoint HPAI (8 bytes)
-    const controlHpai = this.createHPAI(this.localEndpoint!);
+    const controlHpai = this.localEndpoint!.toBuffer();
 
     const payload = Buffer.concat([connectionInfo, controlHpai]);
     const frame = new KNXnetIPFrame(
@@ -631,7 +606,7 @@ export class KNXNetTunnelingImpl
     connectionInfo.writeUInt8(0, 1); // Reserved
 
     // Control Endpoint HPAI (8 bytes)
-    const controlHpai = this.createHPAI(this.localEndpoint!);
+    const controlHpai = this.localEndpoint!.toBuffer();
 
     const payload = Buffer.concat([connectionInfo, controlHpai]);
     const frame = new KNXnetIPFrame(

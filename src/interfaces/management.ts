@@ -1,6 +1,7 @@
 import { EventEmitter } from "events";
 import { createSocket, Socket, RemoteInfo } from "dgram";
 import { KNXBusInterface, KNXNetTunnelingOptions, HPAI } from "../types";
+import { HostProtocol } from "../types/hpai";
 import { KNX_CONSTANTS } from "../constants";
 import { CEMIFrame, KNXnetIPFrame, CEMIMessageCode } from "../frames";
 import {
@@ -208,11 +209,11 @@ export class KNXNetManagementImpl
 
       this.socket.on("listening", () => {
         const address = this.socket!.address();
-        this.localEndpoint = {
-          hostProtocol: 0x01, // UDP
-          address: "0.0.0.0", // Any interface
-          port: address.port,
-        };
+        this.localEndpoint = new HPAI(
+          HostProtocol.IPV4_UDP,
+          "0.0.0.0", // Any interface
+          address.port
+        );
         resolve();
       });
 
@@ -349,20 +350,8 @@ export class KNXNetManagementImpl
   }
 
   private parseHPAI(buffer: Buffer, offset: number): HPAI {
-    const hostProtocol = buffer.readUInt8(offset + 1);
-    const ip = [
-      buffer.readUInt8(offset + 2),
-      buffer.readUInt8(offset + 3),
-      buffer.readUInt8(offset + 4),
-      buffer.readUInt8(offset + 5),
-    ].join(".");
-    const port = buffer.readUInt16BE(offset + 6);
-
-    return {
-      hostProtocol,
-      address: ip,
-      port,
-    };
+    const hpaiBuffer = buffer.subarray(offset, offset + 8);
+    return HPAI.fromBuffer(hpaiBuffer);
   }
 
   private isConnectResponse(msg: Buffer): boolean {
@@ -398,14 +387,16 @@ export class KNXNetManagementImpl
     const dataEndpoint = this.parseHPAI(msg, offset);
 
     // Use server's address and port if data endpoint is 0.0.0.0:0
-    if (dataEndpoint.address === "0.0.0.0") {
-      dataEndpoint.address = rinfo.address;
-    }
-    if (dataEndpoint.port === 0) {
-      dataEndpoint.port = rinfo.port;
+    let finalEndpoint = dataEndpoint;
+    if (dataEndpoint.address === "0.0.0.0" || dataEndpoint.port === 0) {
+      finalEndpoint = new HPAI(
+        dataEndpoint.hostProtocol,
+        dataEndpoint.address === "0.0.0.0" ? rinfo.address : dataEndpoint.address,
+        dataEndpoint.port === 0 ? rinfo.port : dataEndpoint.port
+      );
     }
 
-    return { status, connectionId, dataEndpoint };
+    return { status, connectionId, dataEndpoint: finalEndpoint };
   }
 
   private parseTunnelingAck(msg: Buffer): number {

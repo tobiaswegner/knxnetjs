@@ -1,6 +1,7 @@
 import { EventEmitter } from "events";
 import { createSocket, Socket, RemoteInfo } from "dgram";
 import { DiscoveryEndpoint, DiscoveryOptions, HPAI } from "./types";
+import { HostProtocol } from "./types/hpai";
 import { KNX_CONSTANTS } from "./constants";
 import { KNXnetIPFrame } from "./frames";
 
@@ -92,20 +93,9 @@ export class KNXNetDiscovery extends EventEmitter {
   }
 
   private createHPAI(): Buffer {
-    const hpai = Buffer.allocUnsafe(8);
-    hpai.writeUInt8(8, 0); // Structure length
-    hpai.writeUInt8(0x01, 1); // Host protocol (UDP)
-
-    // Use 0.0.0.0 to indicate any interface
-    hpai.writeUInt8(0, 2); // IP address
-    hpai.writeUInt8(0, 3);
-    hpai.writeUInt8(0, 4);
-    hpai.writeUInt8(0, 5);
-
     const port = this.socket?.address()?.port || 0;
-    hpai.writeUInt16BE(port, 6); // Port
-
-    return hpai;
+    const hpai = new HPAI(HostProtocol.IPV4_UDP, "0.0.0.0", port);
+    return hpai.toBuffer();
   }
 
   private handleSearchResponse(msg: Buffer, rinfo: RemoteInfo): void {
@@ -180,23 +170,8 @@ export class KNXNetDiscovery extends EventEmitter {
   }
 
   private parseHPAI(msg: Buffer, offset: number): HPAI {
-    const length = msg.readUInt8(offset);
-    const hostProtocol = msg.readUInt8(offset + 1);
-
-    const ip = [
-      msg.readUInt8(offset + 2),
-      msg.readUInt8(offset + 3),
-      msg.readUInt8(offset + 4),
-      msg.readUInt8(offset + 5),
-    ].join(".");
-
-    const port = msg.readUInt16BE(offset + 6);
-
-    return {
-      hostProtocol,
-      address: ip,
-      port,
-    };
+    const hpaiBuffer = msg.subarray(offset, offset + 8);
+    return HPAI.fromBuffer(hpaiBuffer);
   }
 
   private parseDeviceInfoDIB(msg: Buffer, offset: number, length: number): any {

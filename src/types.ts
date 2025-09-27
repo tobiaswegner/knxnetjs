@@ -1,5 +1,6 @@
 import { EventEmitter } from "events";
 import { CEMIFrame } from "./frames";
+import { HPAI } from "./types/hpai";
 
 export interface KNXBusInterface extends EventEmitter {
   send(frame: CEMIFrame): Promise<void>;
@@ -72,11 +73,8 @@ export interface DiscoveryOptions {
   searchResponseTimeout?: number;
 }
 
-export interface HPAI {
-  hostProtocol: number;
-  address: string;
-  port: number;
-}
+// Re-export HPAI class for convenience
+export { HPAI };
 
 export interface KNXNetTunnelingOptions {
   serverAddress: string;
