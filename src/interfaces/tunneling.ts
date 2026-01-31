@@ -19,6 +19,8 @@ export class KNXNetTunnelingImpl
   private readonly options: Required<KNXNetTunnelingOptions>;
   private connectionId: number = 0;
   private sequenceCounter: number = 0;
+  private expectedIncomingSequence: number = 0;
+  private pendingRequests: Map<number, { resolve: () => void; reject: (error: Error) => void; timeoutId: NodeJS.Timeout; retryCount: number; originalFrame: Buffer }> = new Map();
   private heartbeatTimer: NodeJS.Timeout | undefined;
   private connectionTimer: NodeJS.Timeout | undefined;
   private serverEndpoint: HPAI | undefined;
@@ -71,28 +73,21 @@ export class KNXNetTunnelingImpl
       );
     }
 
-    const tunnelFrame = this.createTunnelingRequestFrame(frame.toBuffer());
+    const { frame: tunnelFrame, sequence } = this.createTunnelingRequestFrame(frame.toBuffer());
 
     return new Promise((resolve, reject) => {
       const timeoutId = setTimeout(() => {
-        reject(new Error("Tunneling request timeout"));
-      }, this.options.connectionTimeout);
+        this.handleTunnelingTimeout(sequence);
+      }, 1000); // KNXnet/IP spec: 1 second timeout
 
-      const handleAck = (msg: Buffer, rinfo: RemoteInfo) => {
-        if (this.isTunnelingAck(msg)) {
-          clearTimeout(timeoutId);
-          this.socket!.off("message", handleAck);
-
-          const status = this.parseTunnelingAck(msg);
-          if (status === KNX_CONSTANTS.ERROR_CODES.E_NO_ERROR) {
-            resolve();
-          } else {
-            reject(new Error(`Tunneling error: 0x${status.toString(16)}`));
-          }
-        }
-      };
-
-      this.socket!.on("message", handleAck);
+      // Store the pending request with its sequence number
+      this.pendingRequests.set(sequence, { 
+        resolve, 
+        reject, 
+        timeoutId, 
+        retryCount: 0, 
+        originalFrame: tunnelFrame 
+      });
 
       this.socket!.send(
         tunnelFrame,
@@ -100,8 +95,11 @@ export class KNXNetTunnelingImpl
         this.serverEndpoint!.address,
         (err) => {
           if (err) {
-            clearTimeout(timeoutId);
-            this.socket!.off("message", handleAck);
+            const pending = this.pendingRequests.get(sequence);
+            if (pending) {
+              clearTimeout(pending.timeoutId);
+              this.pendingRequests.delete(sequence);
+            }
             reject(err);
           }
         }
@@ -359,7 +357,7 @@ export class KNXNetTunnelingImpl
     return frame.toBuffer();
   }
 
-  private createTunnelingRequestFrame(cemiFrame: Buffer): Buffer {
+  private createTunnelingRequestFrame(cemiFrame: Buffer): { frame: Buffer; sequence: number } {
     const currentSeq = this.sequenceCounter;
     this.sequenceCounter = (this.sequenceCounter + 1) & 0xff;
 
@@ -375,7 +373,7 @@ export class KNXNetTunnelingImpl
       KNX_CONSTANTS.SERVICE_TYPES.TUNNELLING_REQUEST,
       payload
     );
-    return frame.toBuffer();
+    return { frame: frame.toBuffer(), sequence: currentSeq };
   }
 
 
@@ -438,10 +436,11 @@ export class KNXNetTunnelingImpl
     return { status, connectionId, dataEndpoint: finalEndpoint };
   }
 
-  private parseTunnelingAck(msg: Buffer): number {
+  private parseTunnelingAck(msg: Buffer): { status: number; sequence: number } {
     const frame = KNXnetIPFrame.fromBuffer(msg);
-    // Status is at offset 3 in payload (4 byte connection header - 1 for status position)
-    return frame.payload.readUInt8(3);
+    const sequence = frame.payload.readUInt8(2);
+    const status = frame.payload.readUInt8(3);
+    return { status, sequence };
   }
 
   private handleIncomingMessage(msg: Buffer, _rinfo: RemoteInfo): void {
@@ -459,7 +458,10 @@ export class KNXNetTunnelingImpl
         case KNX_CONSTANTS.SERVICE_TYPES.CONNECTIONSTATE_REQUEST:
           this.handleConnectionStateRequest(msg);
           break;
-        // CONNECT_RESPONSE and TUNNELLING_ACK are handled by specific listeners
+        case KNX_CONSTANTS.SERVICE_TYPES.TUNNELLING_ACK:
+          this.handleTunnelingAck(msg);
+          break;
+        // CONNECT_RESPONSE is handled by specific listeners
       }
     } catch (error) {
       this.emit("error", error);
@@ -474,29 +476,65 @@ export class KNXNetTunnelingImpl
     const sequenceCounter = msg.readUInt8(offset + 2);
     offset += 4;
 
-    // Send ACK
+    // Validate connection ID
+    if (connectionId !== this.connectionId) {
+      this.sendTunnelingAck(
+        connectionId,
+        sequenceCounter,
+        KNX_CONSTANTS.ERROR_CODES.E_CONNECTION_ID
+      );
+      return;
+    }
+
+    // Validate sequence number
+    const sequenceValid = this.isValidIncomingSequence(sequenceCounter);
+    
+    if (!sequenceValid.isValid) {
+      // Send NACK for invalid sequence
+      this.sendTunnelingAck(
+        connectionId,
+        sequenceCounter,
+        sequenceValid.errorCode!
+      );
+      
+      // Schedule reconnection for unexpected sequence numbers
+      if (sequenceValid.shouldReconnect) {
+        this.emit("error", new Error(`Invalid sequence number ${sequenceCounter}, expected ${this.expectedIncomingSequence}. Reconnection required.`));
+      }
+      return;
+    }
+    
+    // Send ACK - always acknowledge valid sequences (including duplicates)
     this.sendTunnelingAck(
       connectionId,
       sequenceCounter,
       KNX_CONSTANTS.ERROR_CODES.E_NO_ERROR
     );
 
-    // Extract cEMI frame
-    const cemiFrameBuffer = msg.subarray(offset);
-    if (CEMIFrame.isValidBuffer(cemiFrameBuffer)) {
-      const cemiFrame = CEMIFrame.fromBuffer(cemiFrameBuffer);
-      this.emit("recv", cemiFrame);
-    } else {
-      // For invalid frames, create a basic cEMI frame wrapper
-      try {
+    // Only process frame if it's not a duplicate
+    if (!sequenceValid.isDuplicate) {
+      // Update expected sequence for next message only for new frames
+      this.expectedIncomingSequence = (sequenceCounter + 1) & 0xff;
+      // Extract cEMI frame
+      const cemiFrameBuffer = msg.subarray(offset);
+      if (CEMIFrame.isValidBuffer(cemiFrameBuffer)) {
         const cemiFrame = CEMIFrame.fromBuffer(cemiFrameBuffer);
         this.emit("recv", cemiFrame);
-      } catch (error) {
-        this.emit(
-          "error",
-          new Error(`Invalid cEMI frame received: ${(error as Error).message}`)
-        );
+      } else {
+        // For invalid frames, create a basic cEMI frame wrapper
+        try {
+          const cemiFrame = CEMIFrame.fromBuffer(cemiFrameBuffer);
+          this.emit("recv", cemiFrame);
+        } catch (error) {
+          this.emit(
+            "error",
+            new Error(`Invalid cEMI frame received: ${(error as Error).message}`)
+          );
+        }
       }
+    } else {
+      // Duplicate frame - acknowledged but not processed
+      // According to KNXnet/IP spec: "frames with sequence number one less than expected are silently discarded"
     }
   }
 
@@ -532,6 +570,128 @@ export class KNXNetTunnelingImpl
   private handleConnectionStateRequest(_msg: Buffer): void {
     // Send connection state response
     this.sendConnectionStateResponse(KNX_CONSTANTS.ERROR_CODES.E_NO_ERROR);
+  }
+
+  private isValidIncomingSequence(sequence: number): { isValid: boolean; isDuplicate: boolean; shouldReconnect: boolean; errorCode?: number } {
+    // Normalize sequence numbers to 8-bit (0-255)
+    const normalizeSequence = (seq: number) => seq & 0xff;
+    const expectedNorm = normalizeSequence(this.expectedIncomingSequence);
+    const receivedNorm = normalizeSequence(sequence);
+    
+    // Check if this is the expected sequence number
+    if (receivedNorm === expectedNorm) {
+      return { isValid: true, isDuplicate: false, shouldReconnect: false };
+    }
+    
+    // Check if this is the previous sequence number (duplicate)
+    // According to KNXnet/IP spec: "frames with sequence number one less than expected are silently discarded"
+    const previousExpected = normalizeSequence(this.expectedIncomingSequence - 1);
+    if (receivedNorm === previousExpected) {
+      // This is a duplicate - acknowledge but don't process, and don't trigger reconnection
+      return { isValid: true, isDuplicate: true, shouldReconnect: false };
+    }
+    
+    // Any other sequence number is invalid and should trigger reconnection
+    // According to KNXnet/IP spec: unexpected sequence numbers trigger reconnection
+    return { 
+      isValid: false, 
+      isDuplicate: false, 
+      shouldReconnect: true,
+      errorCode: KNX_CONSTANTS.ERROR_CODES.E_SEQUENCE_NUMBER 
+    };
+  }
+
+  private handleTunnelingTimeout(sequence: number): void {
+    const pending = this.pendingRequests.get(sequence);
+    if (!pending) {
+      return;
+    }
+
+    // KNXnet/IP spec: retry once with same sequence number, then disconnect
+    if (pending.retryCount === 0) {
+      pending.retryCount = 1;
+      
+      // Retry with same sequence number (don't increment sequenceCounter)
+      const retryTimeoutId = setTimeout(() => {
+        // Second timeout - terminate connection
+        this.pendingRequests.delete(sequence);
+        pending.reject(new Error("Tunneling request failed after retry. Terminating connection."));
+        this.close(); // Disconnect as per specification
+      }, 1000); // Another 1 second timeout
+      
+      pending.timeoutId = retryTimeoutId;
+      
+      // Resend with same frame
+      this.socket!.send(
+        pending.originalFrame,
+        this.serverEndpoint!.port,
+        this.serverEndpoint!.address,
+        (err) => {
+          if (err) {
+            clearTimeout(retryTimeoutId);
+            this.pendingRequests.delete(sequence);
+            pending.reject(err);
+          }
+        }
+      );
+    } else {
+      // Already retried - terminate connection
+      this.pendingRequests.delete(sequence);
+      pending.reject(new Error("Tunneling request failed after retry. Terminating connection."));
+      this.close(); // Disconnect as per specification
+    }
+  }
+
+  private handleTunnelingAck(msg: Buffer): void {
+    try {
+      const ackData = this.parseTunnelingAck(msg);
+      const pending = this.pendingRequests.get(ackData.sequence);
+      
+      if (pending) {
+        clearTimeout(pending.timeoutId);
+        this.pendingRequests.delete(ackData.sequence);
+        
+        if (ackData.status === KNX_CONSTANTS.ERROR_CODES.E_NO_ERROR) {
+          pending.resolve();
+        } else {
+          // KNXnet/IP spec: on error ACK, retry once then terminate connection
+          if (pending.retryCount === 0) {
+            pending.retryCount = 1;
+            
+            // Retry with same sequence number
+            const retryTimeoutId = setTimeout(() => {
+              this.pendingRequests.delete(ackData.sequence);
+              pending.reject(new Error("Tunneling request failed after retry. Terminating connection."));
+              this.close(); // Disconnect as per specification
+            }, 1000);
+            
+            pending.timeoutId = retryTimeoutId;
+            this.pendingRequests.set(ackData.sequence, pending);
+            
+            // Resend with same frame
+            this.socket!.send(
+              pending.originalFrame,
+              this.serverEndpoint!.port,
+              this.serverEndpoint!.address,
+              (err) => {
+                if (err) {
+                  clearTimeout(retryTimeoutId);
+                  this.pendingRequests.delete(ackData.sequence);
+                  pending.reject(err);
+                }
+              }
+            );
+          } else {
+            // Already retried - terminate connection
+            pending.reject(new Error(`Tunneling error after retry: 0x${ackData.status.toString(16)}. Terminating connection.`));
+            this.close(); // Disconnect as per specification
+          }
+        }
+      }
+      // If no pending request found, ignore the ACK (might be duplicate or late)
+    } catch (error) {
+      this.emit("error", new Error(`Error parsing tunneling ACK: ${(error as Error).message}`));
+    }
   }
 
   private sendConnectionStateResponse(status: number): void {
@@ -641,8 +801,16 @@ export class KNXNetTunnelingImpl
       this.socket = undefined;
     }
 
+    // Clear pending requests
+    for (const [, pending] of this.pendingRequests) {
+      clearTimeout(pending.timeoutId);
+      pending.reject(new Error("Connection closed"));
+    }
+    this.pendingRequests.clear();
+
     this.connectionId = 0;
     this.sequenceCounter = 0;
+    this.expectedIncomingSequence = 0;
     this.serverEndpoint = undefined;
     this.localEndpoint = undefined;
   }
