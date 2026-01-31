@@ -10,6 +10,23 @@ import {
   CEMIPropertyReadCon,
 } from "../frames/cemi-properties";
 
+/**
+ * KNXnet/IP Tunneling implementation that provides point-to-point exchange of KNX telegrams
+ * over an IP network between a KNXnet/IP server and client.
+ * 
+ * Features:
+ * - Full KNXnet/IP tunneling protocol compliance with proper sequence number handling
+ * - Automatic retry logic with 1-second timeouts per specification
+ * - Connection management with heartbeat and state monitoring
+ * - Support for both normal tunneling and busmonitor modes
+ * - Device configuration capabilities (property read/write)
+ * 
+ * Sequence Number Handling:
+ * - Validates incoming sequence numbers per KNXnet/IP specification
+ * - Handles duplicates (sequence n-1) by acknowledging but not processing
+ * - Triggers reconnection on invalid sequence numbers
+ * - Implements proper retry logic with connection termination on failures
+ */
 export class KNXNetTunnelingImpl
   extends EventEmitter
   implements KNXBusInterface
@@ -61,6 +78,17 @@ export class KNXNetTunnelingImpl
     }
   }
 
+  /**
+   * Sends a cEMI frame through the tunneling connection with proper sequence number handling.
+   * 
+   * Implements KNXnet/IP compliant retry logic:
+   * - 1-second timeout for acknowledgments
+   * - Single retry with same sequence number on timeout/error
+   * - Connection termination on repeated failures
+   * 
+   * @param frame The cEMI frame to send
+   * @throws Error if not connected, in busmonitor mode, or transmission fails
+   */
   async send(frame: CEMIFrame): Promise<void> {
     if (!this.isConnected || !this.socket || !this.serverEndpoint) {
       throw new Error("Not connected to tunneling server");
@@ -168,7 +196,7 @@ export class KNXNetTunnelingImpl
       );
     });
 
-    return new Promise<void>((resolve, reject) => {
+    return new Promise<void>((resolve) => {
       setTimeout(() => {
         resolve();
       }, 2000);
@@ -357,6 +385,12 @@ export class KNXNetTunnelingImpl
     return frame.toBuffer();
   }
 
+  /**
+   * Creates a TUNNELLING_REQUEST frame with proper sequence number handling.
+   * 
+   * @param cemiFrame The cEMI frame data to encapsulate
+   * @returns Object containing the complete frame buffer and sequence number used
+   */
   private createTunnelingRequestFrame(cemiFrame: Buffer): { frame: Buffer; sequence: number } {
     const currentSeq = this.sequenceCounter;
     this.sequenceCounter = (this.sequenceCounter + 1) & 0xff;
@@ -389,14 +423,6 @@ export class KNXNetTunnelingImpl
     return serviceType === KNX_CONSTANTS.SERVICE_TYPES.CONNECT_RESPONSE;
   }
 
-  private isTunnelingAck(msg: Buffer): boolean {
-    try {
-      const frame = KNXnetIPFrame.fromBuffer(msg);
-      return frame.service === KNX_CONSTANTS.SERVICE_TYPES.TUNNELLING_ACK;
-    } catch {
-      return false;
-    }
-  }
 
   private parseConnectResponse(
     msg: Buffer,
@@ -468,6 +494,16 @@ export class KNXNetTunnelingImpl
     }
   }
 
+  /**
+   * Processes incoming TUNNELLING_REQUEST frames with proper sequence number validation.
+   * 
+   * Implements KNXnet/IP sequence number validation:
+   * - Expected sequence: Process frame and send ACK
+   * - Duplicate (n-1): Send ACK but don't process (silent discard)
+   * - Invalid sequence: Send NACK and emit error for reconnection
+   * 
+   * @param msg The raw TUNNELLING_REQUEST message buffer
+   */
   private handleTunnelingRequest(msg: Buffer): void {
     let offset = KNX_CONSTANTS.HEADER_SIZE;
 
@@ -572,6 +608,17 @@ export class KNXNetTunnelingImpl
     this.sendConnectionStateResponse(KNX_CONSTANTS.ERROR_CODES.E_NO_ERROR);
   }
 
+  /**
+   * Validates incoming sequence numbers according to KNXnet/IP specification.
+   * 
+   * @param sequence The received sequence number (0-255)
+   * @returns Validation result with flags for processing decisions
+   * 
+   * Sequence Number Rules:
+   * - Expected sequence (n): Valid, process frame and increment expected counter
+   * - Previous sequence (n-1): Valid duplicate, acknowledge but don't process
+   * - Any other sequence: Invalid, send NACK and trigger reconnection
+   */
   private isValidIncomingSequence(sequence: number): { isValid: boolean; isDuplicate: boolean; shouldReconnect: boolean; errorCode?: number } {
     // Normalize sequence numbers to 8-bit (0-255)
     const normalizeSequence = (seq: number) => seq & 0xff;
@@ -601,6 +648,14 @@ export class KNXNetTunnelingImpl
     };
   }
 
+  /**
+   * Handles timeout for TUNNELLING_REQUEST frames according to KNXnet/IP specification.
+   * 
+   * Per spec: If no TUNNELLING_ACK is received within 1 second, retry once with the same
+   * sequence number. If retry also fails, terminate the connection.
+   * 
+   * @param sequence The sequence number of the timed-out request
+   */
   private handleTunnelingTimeout(sequence: number): void {
     const pending = this.pendingRequests.get(sequence);
     if (!pending) {
@@ -642,6 +697,14 @@ export class KNXNetTunnelingImpl
     }
   }
 
+  /**
+   * Processes incoming TUNNELLING_ACK frames and manages pending requests.
+   * 
+   * Validates that the ACK sequence number matches a pending request and handles
+   * success/error responses. On error ACKs, implements retry logic per specification.
+   * 
+   * @param msg The raw TUNNELLING_ACK message buffer
+   */
   private handleTunnelingAck(msg: Buffer): void {
     try {
       const ackData = this.parseTunnelingAck(msg);
