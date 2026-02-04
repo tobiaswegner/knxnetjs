@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.11.4] - 2026-02-04
+
+### Fixed
+- **CEMI Frame CTRL2 Byte Handling**: Fixed incorrect CTRL2 byte presence detection for different frame types
+  - Physical frames (L_BUSMON_IND): Only extended frames have a dedicated CTRL2 byte; standard frames encode routing counter and address type in the NPCI/length byte
+  - CEMI frames (L_DATA_REQ/CON/IND): Always include a dedicated CTRL2 byte regardless of standard or extended frame type
+- **Data Length Parsing**: Fixed data length extraction for standard physical frames (lower 4 bits of NPCI byte)
+
+### Added
+- `isPhysicalFrame` property to distinguish between physical frames (bus monitor) and CEMI frames
+- `hasCtrl2Byte` private helper to correctly determine CTRL2 byte presence based on frame type
+
+### Technical Details
+- Updated `controlField2`, `sourceAddress`, `destinationAddress`, `dataLength`, and `data` getters to use new `hasCtrl2Byte` logic
+- Updated `CEMIFrame.create()` static method to handle both physical and CEMI frame creation correctly
+
 ## [1.11.3] - 2025-09-27
 
 ### Added

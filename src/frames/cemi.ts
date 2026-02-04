@@ -79,7 +79,11 @@ export class CEMIFrame {
     // Calculate service info length: 1 (ctrl1) + 0|1 (ctrl2) + 2 (src) + 2 (dst) + 1 (len) + data
     const ctrl1 = (hopCount << 4) | (priority << 2) | 0x00;
     const isExtended = (ctrl1 & 0x80) === 0;
-    const serviceInfoLength = (isExtended ? 7 : 6) + data.length; // Add 1 byte for ctrl2 if extended
+    const isPhysicalFrame = messageCode === CEMIMessageCode.L_BUSMON_IND;
+    // Physical frames: only extended frames have CTRL2
+    // CEMI frames: always have CTRL2
+    const hasCtrl2 = isPhysicalFrame ? isExtended : true;
+    const serviceInfoLength = (hasCtrl2 ? 7 : 6) + data.length;
     const frameLength = 2 + additionalInfoLength + serviceInfoLength;
     const buffer = Buffer.allocUnsafe(frameLength);
 
@@ -100,13 +104,12 @@ export class CEMIFrame {
     }
 
     // Service Information (L_Data)
-    // Control Field 1 (CTRL1) - reuse the calculated value
+    // Control Field 1 (CTRL1)
     buffer.writeUInt8(ctrl1, offset++);
 
-    // Control Field 2 (for extended frames, bit 7 = 0 means extended frame)
-    if ((ctrl1 & 0x80) === 0) {
-      // Extended frame - add Control Field 2
-      const ctrl2 = (hopCount << 4) | 0x00; // Hop count and other flags
+    // Control Field 2 - present in CEMI frames and extended physical frames
+    if (hasCtrl2) {
+      const ctrl2 = (hopCount << 4) | 0x00; // Hop count and address type flags
       buffer.writeUInt8(ctrl2, offset++);
     }
 
@@ -221,11 +224,11 @@ export class CEMIFrame {
   }
 
   get controlField2(): number {
-    if (this.extendedFrame) {
+    if (this.hasCtrl2Byte) {
       const offset = this.serviceInfoOffset + 1;
       return this.buffer.length > offset ? this.buffer.readUInt8(offset) : 0;
     } else {
-      // In standard frames, Control Field 2 is in the upper 4 bits of the length field
+      // In standard physical frames, Control Field 2 is in the upper 4 bits of the length field
       const offset = this.serviceInfoOffset + 5;
       if (this.buffer.length < offset + 1) return 0;
       return this.buffer.readUInt8(offset) & 0xf0;
@@ -259,6 +262,35 @@ export class CEMIFrame {
     return (this.controlField1 & 0x80) !== 0;
   }
 
+  /**
+   * Checks if this frame contains a physical frame (as delivered by bus monitor).
+   * Physical frames are encoded more space-efficiently - standard frames don't have
+   * a dedicated CTRL2 byte, only extended frames do.
+   */
+  get isPhysicalFrame(): boolean {
+    return this.messageCode === CEMIMessageCode.L_BUSMON_IND;
+  }
+
+  /**
+   * Determines if this frame has a dedicated CTRL2 byte.
+   *
+   * For physical frames (L_BUSMON_IND): Delivered as-is from the bus.
+   * Standard physical frames encode routing counter and address type in the
+   * NPCI/length byte, so they don't have a separate CTRL2 byte.
+   * Extended physical frames have a dedicated CTRL2 byte.
+   *
+   * For CEMI frames (L_DATA_REQ/CON/IND): The CEMI format always includes
+   * a dedicated CTRL2 byte, regardless of standard or extended frame type.
+   */
+  private get hasCtrl2Byte(): boolean {
+    if (this.isPhysicalFrame) {
+      // Physical frames: only extended frames have CTRL2
+      return this.extendedFrame;
+    }
+    // CEMI L_Data frames: always have CTRL2
+    return true;
+  }
+
   get repeatFlag(): boolean {
     return (this.controlField1 & 0x20) !== 0;
   }
@@ -285,9 +317,9 @@ export class CEMIFrame {
   }
 
   get sourceAddress(): number {
-    // Standard frame: offset = 2 (msg+addinfo) + 1 (ctrl1) = 3
-    // Extended frame: offset = 2 (msg+addinfo) + 1 (ctrl1) + 1 (ctrl2) = 4
-    const offset = this.serviceInfoOffset + 1 + (this.extendedFrame ? 1 : 0);
+    // Without CTRL2: offset = serviceInfo + 1 (ctrl1)
+    // With CTRL2: offset = serviceInfo + 1 (ctrl1) + 1 (ctrl2)
+    const offset = this.serviceInfoOffset + 1 + (this.hasCtrl2Byte ? 1 : 0);
     if (this.buffer.length < offset + 2) return 0;
     return this.buffer.readUInt16BE(offset);
   }
@@ -301,9 +333,9 @@ export class CEMIFrame {
   }
 
   get destinationAddress(): number {
-    // Standard frame: offset = 2 (msg+addinfo) + 1 (ctrl1) + 2 (src addr) = 5
-    // Extended frame: offset = 2 (msg+addinfo) + 1 (ctrl1) + 1 (ctrl2) + 2 (src addr) = 6
-    const offset = this.serviceInfoOffset + 3 + (this.extendedFrame ? 1 : 0);
+    // Without CTRL2: offset = serviceInfo + 1 (ctrl1) + 2 (src addr)
+    // With CTRL2: offset = serviceInfo + 1 (ctrl1) + 1 (ctrl2) + 2 (src addr)
+    const offset = this.serviceInfoOffset + 3 + (this.hasCtrl2Byte ? 1 : 0);
     if (this.buffer.length < offset + 2) return 0;
     return this.buffer.readUInt16BE(offset);
   }
@@ -329,22 +361,21 @@ export class CEMIFrame {
   }
 
   get dataLength(): number {
-    const offset = this.serviceInfoOffset + 5 + (this.extendedFrame ? 1 : 0);
+    const offset = this.serviceInfoOffset + 5 + (this.hasCtrl2Byte ? 1 : 0);
     if (this.buffer.length < offset + 1) return 0;
     const lengthByte = this.buffer.readUInt8(offset);
-    if (this.standardFrame) {
-      // In standard frames, data length is in the lower 4 bits
-      // This represents the number of application payload bytes (excluding TPCI/APCI)
+    if (this.isPhysicalFrame && this.standardFrame) {
+      // In standard physical frames, data length is in the lower 4 bits
+      // (upper 4 bits contain routing counter and address type)
       return lengthByte & 0x0f;
     } else {
-      // In extended frames, full byte is data length
-      // This represents the number of application payload bytes (excluding TPCI/APCI)
+      // In extended frames and all CEMI frames, full byte is data length
       return lengthByte;
     }
   }
 
   get data(): Buffer {
-    const offset = this.serviceInfoOffset + 6 + (this.extendedFrame ? 1 : 0);
+    const offset = this.serviceInfoOffset + 6 + (this.hasCtrl2Byte ? 1 : 0);
     if (this.buffer.length <= offset) return Buffer.alloc(0);
     return this.buffer.subarray(offset);
   }

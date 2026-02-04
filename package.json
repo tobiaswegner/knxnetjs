@@ -1,6 +1,6 @@
 {
   "name": "knxnetjs",
-  "version": "1.11.3",
+  "version": "1.11.4",
   "description": "A TypeScript library for KNXnet/IP communication",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
