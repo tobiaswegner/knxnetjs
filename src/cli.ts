@@ -33,7 +33,7 @@ interface CLIOptions {
   data?: string;
 }
 
-function parseArgs(): CLIOptions {
+export function parseArgs(): CLIOptions {
   const args = process.argv.slice(2);
   const options: CLIOptions = {};
 
@@ -363,7 +363,7 @@ async function startFrameDump(options: CLIOptions): Promise<void> {
   }
 }
 
-function formatCapabilities(capabilities: number): string {
+export function formatCapabilities(capabilities: number): string {
   const caps: string[] = [];
 
   if (capabilities & KNX_CONSTANTS.DEVICE_CAPABILITIES.DEVICE_MANAGEMENT) {
@@ -388,7 +388,7 @@ function formatCapabilities(capabilities: number): string {
   return caps.length > 0 ? caps.join(", ") : "None";
 }
 
-function formatInterfaceResult(interfaceInfo: KNXInterfaceInformation): string {
+export function formatInterfaceResult(interfaceInfo: KNXInterfaceInformation): string {
   let output = `\n┌─ ${interfaceInfo.name}\n`;
   output += `├─ Type: ${interfaceInfo.type.toUpperCase()}\n`;
 
